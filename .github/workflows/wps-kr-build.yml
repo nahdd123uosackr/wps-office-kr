@@ -230,7 +230,7 @@ jobs:
         run: |
           useradd -m -G wheel -s /bin/bash builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
-          chown -R builder:builder /github/workspace
+          chown -R builder:builder "${GITHUB_WORKSPACE}"
 
       - name: Prepare PKGBUILD with new version
         id: prepare_pkgbuild
@@ -272,7 +272,7 @@ jobs:
       - name: Build package
         run: |
           sudo -u builder bash -c "
-            cd /github/workspace
+            cd \"${GITHUB_WORKSPACE}\"
             makepkg -s --noconfirm 2>&1 | tee build.log
           "
 
