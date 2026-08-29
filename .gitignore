@@ -1,0 +1,34 @@
+# Build artifacts
+pkg/
+src/
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+*.log
+*.deb
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LXC/test containers
+test_build/
+extracted/
+wine_prefix/
+check_fontconfig/
+
+# Cache
+*.cache
+__pycache__/
+.pytest_cache/

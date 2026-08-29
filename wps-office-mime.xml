@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <!--
+    WPS Office MIME Type Definitions
+    Properly defines WPS Office file types without overriding system MIME types.
+    This prevents the issue where WPS Office overrides .docx, .xlsx, .pptx associations.
+  -->
+
+  <!-- WPS Office native formats -->
+  <mime-type type="application/vnd.wps-office.wps">
+    <comment>WPS Office Writer Document</comment>
+    <comment xml:lang="ko">WPS Office 워드 문서</comment>
+    <glob pattern="*.wps"/>
+    <glob pattern="*.wpt"/>
+  </mime-type>
+
+  <mime-type type="application/vnd.wps-office.et">
+    <comment>WPS Office Spreadsheet Document</comment>
+    <comment xml:lang="ko">WPS Office 스프레드시트 문서</comment>
+    <glob pattern="*.et"/>
+    <glob pattern="*.ett"/>
+  </mime-type>
+
+  <mime-type type="application/vnd.wps-office.dps">
+    <comment>WPS Office Presentation Document</comment>
+    <comment xml:lang="ko">WPS Office 프레젠테이션 문서</comment>
+    <glob pattern="*.dps"/>
+    <glob pattern="*.dpt"/>
+  </mime-type>
+
+  <!-- WPS Office 2019+ formats -->
+  <mime-type type="application/vnd.wps-office.wps2019">
+    <comment>WPS Office 2019 Writer Document</comment>
+    <glob pattern="*.wps"/>
+  </mime-type>
+
+  <mime-type type="application/vnd.wps-office.et2019">
+    <comment>WPS Office 2019 Spreadsheet Document</comment>
+    <glob pattern="*.et"/>
+  </mime-type>
+
+  <mime-type type="application/vnd.wps-office.dps2019">
+    <comment>WPS Office 2019 Presentation Document</comment>
+    <glob pattern="*.dps"/>
+  </mime-type>
+
+  <!-- Microsoft Office formats - DO NOT override, just add WPS as alternative handler -->
+  <!-- These are defined by shared-mime-info; we only add WPS as a supported application -->
+  <!-- The actual MIME types are: -->
+  <!-- application/msword (.doc) -->
+  <!-- application/vnd.openxmlformats-officedocument.wordprocessingml.document (.docx) -->
+  <!-- application/vnd.ms-excel (.xls) -->
+  <!-- application/vnd.openxmlformats-officedocument.spreadsheetml.sheet (.xlsx) -->
+  <!-- application/vnd.ms-powerpoint (.ppt) -->
+  <!-- application/vnd.openxmlformats-officedocument.presentationml.presentation (.pptx) -->
+
+  <!-- Kingsoft specific formats -->
+  <mime-type type="application/x-kingsoft-wps">
+    <comment>Kingsoft WPS Document</comment>
+    <glob pattern="*.wps"/>
+  </mime-type>
+
+  <mime-type type="application/x-kingsoft-et">
+    <comment>Kingsoft ET Spreadsheet</comment>
+    <glob pattern="*.et"/>
+  </mime-type>
+
+  <mime-type type="application/x-kingsoft-dps">
+    <comment>Kingsoft DPS Presentation</comment>
+    <glob pattern="*.dps"/>
+  </mime-type>
+
+  <!-- OFD (Open Fixed-layout Document) - Chinese standard -->
+  <mime-type type="application/ofd">
+    <comment>Open Fixed-layout Document</comment>
+    <comment xml:lang="ko">개방형 고정 레이아웃 문서</comment>
+    <glob pattern="*.ofd"/>
+    <magic priority="50">
+      <match type="string" value="OFD" offset="0"/>
+    </magic>
+  </mime-type>
+
+  <!-- UOF (Unified Office Format) - Chinese standard -->
+  <mime-type type="application/vnd.uof.word">
+    <comment>UOF Word Document</comment>
+    <glob pattern="*.uof"/>
+  </mime-type>
+
+  <mime-type type="application/vnd.uof.spreadsheet">
+    <comment>UOF Spreadsheet Document</comment>
+    <glob pattern="*.uos"/>
+  </mime-type>
+
+  <mime-type type="application/vnd.uof.presentation">
+    <comment>UOF Presentation Document</comment>
+    <glob pattern="*.uop"/>
+  </mime-type>
+
+</mime-info>

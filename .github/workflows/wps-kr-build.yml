@@ -1,0 +1,354 @@
+name: WPS Office KR Build & Release
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 매일 새벽 2시 (KST 11시) 버전 체크
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if version unchanged'
+        type: boolean
+        default: false
+      version:
+        description: 'Specific version to build (e.g., 12.1.2.28080)'
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  check-version:
+    name: Check Upstream Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      sha256: ${{ steps.get_version.outputs.sha256 }}
+      changed: ${{ steps.get_version.outputs.changed }}
+      deb_url: ${{ steps.get_version.outputs.deb_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 lxml
+
+      - name: Get latest WPS Office version
+        id: get_version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'EOF'
+          import requests
+          import re
+          import json
+          import os
+          import subprocess
+
+          # Get current version from PKGBUILD
+          with open('PKGBUILD', 'r') as f:
+              pkgbuild = f.read()
+          
+          current_version = re.search(r'pkgver=([\d.]+)', pkgbuild)
+          current_version = current_version.group(1) if current_version else '0'
+          print(f"Current PKGBUILD version: {current_version}")
+
+          # Check wps-office-365 CDN for latest version
+          # The version pattern is in the URL: /download/Linux/XXXXX/
+          base_url = "https://pubwps-wps365-obs.wpscdn.cn/download/Linux/"
+          
+          try:
+              # Try to get directory listing or check known version patterns
+              # WPS versions follow pattern: 12.1.2.XXXXX
+              response = requests.get(base_url, timeout=30)
+              versions = re.findall(r'(\d{5})/', response.text)
+              versions = sorted(set(versions), reverse=True)
+              
+              if versions:
+                  latest_build = versions[0]
+                  latest_version = f"12.1.2.{latest_build}"
+                  print(f"Latest upstream version: {latest_version}")
+              else:
+                  # Fallback: check wps-office-cn AUR page
+                  response = requests.get(
+                      'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-cn',
+                      timeout=30
+                  )
+                  match = re.search(r'pkgver=([\d.]+)', response.text)
+                  if match:
+                      latest_version = match.group(1)
+                      latest_build = latest_version.split('.')[-1]
+                  else:
+                      raise Exception("Could not determine latest version")
+                      
+          except Exception as e:
+              print(f"Error fetching version: {e}")
+              # Use force build version or current
+              if os.environ.get('FORCE_VERSION'):
+                  latest_version = os.environ['FORCE_VERSION']
+              else:
+                  latest_version = current_version
+
+          # Check if version changed
+          force_build = os.environ.get('FORCE_BUILD', 'false').lower() == 'true'
+          changed = latest_version != current_version or force_build
+          
+          if changed:
+              print(f"Version changed: {current_version} -> {latest_version}")
+          else:
+              print("No version change detected")
+
+          # Construct deb URL
+          deb_url = f"https://pubwps-wps365-obs.wpscdn.cn/download/Linux/{latest_build}/wps-office_{latest_version}.AK.preread.sw.365_765469_amd64.deb"
+          
+          # Try to get SHA256 (optional, we'll compute during build)
+          sha256 = "SKIP"
+          
+          # Set outputs
+          outputs = {
+              'version': latest_version,
+              'build': latest_build,
+              'changed': str(changed).lower(),
+              'deb_url': deb_url,
+              'sha256': sha256
+          }
+          
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              for k, v in outputs.items():
+                  f.write(f"{k}={v}\n")
+
+  build:
+    name: Build Package
+    needs: check-version
+    if: needs.check-version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bsdtar \
+            xz-utils \
+            tar \
+            gzip \
+            fakeroot \
+            binutils \
+            fontconfig \
+            libxrender-dev \
+            xdg-utils \
+            libglu1-mesa \
+            libpulse-dev \
+            libxss-dev \
+            libsqlite3-dev \
+            libtool \
+            libtiff-dev \
+            libxslt1-dev \
+            libjpeg-turbo8-dev \
+            libpng-dev \
+            libfreetype6-dev \
+            desktop-file-utils \
+            shared-mime-info \
+            hicolor-icon-theme \
+            libsdl2-dev \
+            libglvnd-dev \
+            ca-certificates \
+            wget \
+            python3 \
+            python3-pip
+
+      - name: Setup build environment
+        run: |
+          # Create builder user
+          sudo useradd -m -G sudo -s /bin/bash builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/builder
+          sudo chown -R builder:builder /home/builder
+
+      - name: Prepare PKGBUILD with new version
+        id: prepare_pkgbuild
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          BUILD="${{ needs.check-version.outputs.build }}"
+          DEB_URL="${{ needs.check-version.outputs.deb_url }}"
+          
+          # Update PKGBUILD
+          sed -i "s/pkgver=.*/pkgver=${VERSION}/" PKGBUILD
+          sed -i "s|source_base=.*|source_base=\"https://pubwps-wps365-obs.wpscdn.cn/download/Linux/${BUILD}/wps-office_${VERSION}.AK.preread.sw.365\"|" PKGBUILD
+          sed -i "s|source_x86_64=.*|source_x86_64=(\"${DEB_URL}\")|" PKGBUILD
+          
+          # Show changes
+          git diff PKGBUILD
+
+      - name: Download and verify source
+        run: |
+          DEB_URL="${{ needs.check-version.outputs.deb_url }}"
+          DEB_FILE=$(basename "$DEB_URL")
+          
+          echo "Downloading: $DEB_URL"
+          wget -q --show-progress "$DEB_URL" -O "$DEB_FILE"
+          
+          # Compute SHA256
+          SHA256=$(sha256sum "$DEB_FILE" | cut -d' ' -f1)
+          echo "Computed SHA256: $SHA256"
+          
+          # Update PKGBUILD with correct SHA256
+          sed -i "s/sha256sums_x86_64=.*/sha256sums_x86_64=('${SHA256}')/" PKGBUILD
+          
+          # Save SHA256 for later
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          
+          # Move to source location
+          mkdir -p src
+          mv "$DEB_FILE" src/
+
+      - name: Build package
+        run: |
+          sudo -u builder bash -c "
+            cd $(pwd)
+            makepkg -s --noconfirm 2>&1 | tee build.log
+          "
+
+      - name: Verify packages
+        run: |
+          ls -la *.pkg.tar.zst
+          
+          # Check package contents
+          for pkg in *.pkg.tar.zst; do
+            echo "=== $pkg ==="
+            tar -tf "$pkg" | head -20
+          done
+
+      - name: Generate package info
+        id: package_info
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          SHA256="${{ steps.download_source.outputs.sha256 }}"
+          
+          # Create release notes
+          cat > release_notes.md << EOF
+          ## WPS Office KR ${{ github.repository }}
+          
+          **Version:** ${VERSION}
+          **Build Date:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          **Commit:** ${{ github.sha }}
+          
+          ### Changes
+          - Updated to upstream WPS Office ${VERSION}
+          - Korean locale (ko_KR) with default date format: yyyy-MM-dd
+          - MIME type protection (prevents .docx/.xlsx/.pptx override)
+          - Improved font rendering (Liberation/Carlito metric-compatible)
+          - System library integration (libjpeg, libstdc++)
+          
+          ### Packages
+          - \`wps-office-kr\`: Main package with all patches
+          - \`wps-office-kr-mime\`: MIME type definitions
+          - \`wps-office-kr-fonts\`: WPS provided fonts
+          
+          ### SHA256 (source deb)
+          \`\`\`
+          ${SHA256}
+          \`\`\`
+          
+          ### Installation (Arch Linux)
+          \`\`\`bash
+          # Using pacman (after adding to local repo)
+          sudo pacman -U wps-office-kr-${VERSION}-1-x86_64.pkg.tar.zst
+          sudo pacman -U wps-office-kr-mime-${VERSION}-1-any.pkg.tar.zst
+          sudo pacman -U wps-office-kr-fonts-${VERSION}-1-any.pkg.tar.zst
+          
+          # Or with makepkg
+          git clone https://github.com/${{ github.repository }}.git
+          cd wps-office-kr
+          makepkg -si
+          \`\`\`
+          
+          ### Configuration
+          After installation, the following are automatically configured:
+          - Default locale: ko_KR.UTF-8
+          - Default date format in Spreadsheet: yyyy-MM-dd
+          - MIME detection disabled at startup
+          - Font substitution: Arial→Liberation Sans, Calibri→Carlito, etc.
+          EOF
+          
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wps-office-kr-packages
+          path: |
+            *.pkg.tar.zst
+            *.pkg.tar.zst.sig
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: [check-version, build]
+    if: needs.check-version.outputs.changed == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wps-office-kr-packages
+          path: dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: WPS Office KR ${{ needs.check-version.outputs.version }}
+          body_path: ${{ needs.build.outputs.release_notes }}
+          files: |
+            dist/*.pkg.tar.zst
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update PKGBUILD in repo (optional)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          # The PKGBUILD was already updated during build
+          # Commit and push if there are changes
+          if ! git diff --quiet PKGBUILD; then
+            git add PKGBUILD
+            git commit -m "chore: update to version ${{ needs.check-version.outputs.version }} [skip ci]"
+            git push
+          fi
+
+  notify:
+    name: Notify on Failure
+    needs: [check-version, build, release]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "Build failed for version ${{ needs.check-version.outputs.version }}"
+          echo "Check workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        shell: bash

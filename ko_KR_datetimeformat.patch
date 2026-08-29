@@ -1,0 +1,47 @@
+[WppDateTimeFormat]
+id="1042"
+preStr="[$-412]"
+format/size    = 13
+format/1/name  = "yyyy-MM-dd"
+format/1/index = 1
+format/2/name  = "yyyy년 M월 d일"
+format/2/index = 2
+format/3/name  = "yyyy년 M월 d일 dddd"
+format/3/index = 3
+format/4/name  = "yyyy/MM/dd"
+format/4/index = 4
+format/5/name  = "yy.MM.dd"
+format/5/index = 5
+format/6/name  = "yyyy년 M월"
+format/6/index = 6
+format/7/name  = "yyyy년 M월 d일 h시 mm분"
+format/7/index = 7
+format/8/name  = "yyyy년 M월 d일 dddd h시 mm분 s초"
+format/8/index = 8
+format/9/name  = "H:mm"
+format/9/index = 9
+format/10/name  = "H:mm:ss"
+format/10/index = 10
+format/11/name  = "오전/오후 h시 m분"
+format/11/index = 11
+format/12/name  = "오전/오후 h시 m분 s초"
+format/12/index = 12
+format/13/name  = "yyyy-MM-dd H:mm:ss"
+format/13/index = 13
+
+[WpsDateTimeFormat]
+id="1042"
+preStr="[$-412]"
+item[1]="yyyy-MM-dd"
+item[2]="yyyy년 M월 d일"
+item[3]="yyyy년 M월 d일 dddd"
+item[4]="yyyy/MM/dd"
+item[5]="yy.MM.dd"
+item[6]="yyyy년 M월"
+item[7]="h시 m분 s초"
+item[8]="h시 m분"
+item[9]="H:mm:ss"
+item[10]="오전/오후 h시 m분"
+item[11]="dddd년 O월 A일"
+item[12]="dddd년 O월 A일 dddd"
+item[13]="dddd년 O월"
