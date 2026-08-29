@@ -67,41 +67,80 @@ jobs:
           current_version = current_version.group(1) if current_version else '0'
           print(f"Current PKGBUILD version: {current_version}")
 
-          # Check wps-office-365 CDN for latest version
-          # The version pattern is in the URL: /download/Linux/XXXXX/
-          base_url = "https://pubwps-wps365-obs.wpscdn.cn/download/Linux/"
+          # Try multiple sources for latest version (ordered by reliability)
+          latest_version = None
+          latest_build = None
           
+          # Source 1: linux.wps.cn (official Chinese site)
           try:
-              # Try to get directory listing or check known version patterns
-              # WPS versions follow pattern: 12.1.2.XXXXX
-              response = requests.get(base_url, timeout=30)
-              versions = re.findall(r'(\d{5})/', response.text)
-              versions = sorted(set(versions), reverse=True)
-              
+              print("Trying linux.wps.cn...")
+              response = requests.get("https://linux.wps.cn/", timeout=15)
+              versions = re.findall(r'12\.1\.\d+\.\d+', response.text)
               if versions:
-                  latest_build = versions[0]
-                  latest_version = f"12.1.2.{latest_build}"
-                  print(f"Latest upstream version: {latest_version}")
-              else:
-                  # Fallback: check wps-office-cn AUR page
+                  latest_version = versions[0]
+                  latest_build = latest_version.split('.')[-1]
+                  print(f"Found version from linux.wps.cn: {latest_version}")
+          except Exception as e:
+              print(f"linux.wps.cn failed: {e}")
+
+          # Source 2: AUR wps-office-cn
+          if not latest_version:
+              try:
+                  print("Trying AUR wps-office-cn...")
                   response = requests.get(
                       'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-cn',
-                      timeout=30
+                      timeout=15
                   )
                   match = re.search(r'pkgver=([\d.]+)', response.text)
                   if match:
                       latest_version = match.group(1)
                       latest_build = latest_version.split('.')[-1]
-                  else:
-                      raise Exception("Could not determine latest version")
-                      
-          except Exception as e:
-              print(f"Error fetching version: {e}")
-              # Use force build version or current
+                      print(f"Found version from AUR wps-office-cn: {latest_version}")
+              except Exception as e:
+                  print(f"AUR wps-office-cn failed: {e}")
+
+          # Source 3: AUR wps-office-365
+          if not latest_version:
+              try:
+                  print("Trying AUR wps-office-365...")
+                  response = requests.get(
+                      'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-365',
+                      timeout=15
+                  )
+                  match = re.search(r'pkgver=([\d.]+)', response.text)
+                  if match:
+                      latest_version = match.group(1)
+                      latest_build = latest_version.split('.')[-1]
+                      print(f"Found version from AUR wps-office-365: {latest_version}")
+              except Exception as e:
+                  print(f"AUR wps-office-365 failed: {e}")
+
+          # Source 4: www.wps.com/office/linux/
+          if not latest_version:
+              try:
+                  print("Trying www.wps.com...")
+                  response = requests.get("https://www.wps.com/office/linux/", timeout=15)
+                  versions = re.findall(r'12\.1\.\d+\.\d+', response.text)
+                  if versions:
+                      latest_version = versions[0]
+                      latest_build = latest_version.split('.')[-1]
+                      print(f"Found version from www.wps.com: {latest_version}")
+              except Exception as e:
+                  print(f"www.wps.com failed: {e}")
+
+          # If all sources failed
+          if not latest_version:
+              print("All version sources failed!")
               if os.environ.get('FORCE_VERSION'):
                   latest_version = os.environ['FORCE_VERSION']
+                  latest_build = latest_version.split('.')[-1]
+                  print(f"Using FORCE_VERSION: {latest_version}")
               else:
                   latest_version = current_version
+                  latest_build = current_version.split('.')[-1]
+                  print(f"No version change detected, keeping current: {latest_version}")
+
+          print(f"Final determined version: {latest_version} (build: {latest_build})")
 
           # Check if version changed
           force_build = os.environ.get('FORCE_BUILD', 'false').lower() == 'true'
@@ -130,6 +169,7 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               for k, v in outputs.items():
                   f.write(f"{k}={v}\n")
+EOF
 
   build:
     name: Build Package
