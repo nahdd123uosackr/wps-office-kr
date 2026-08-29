@@ -45,8 +45,10 @@ source+=(
   'wps-office-disable-mime-detection.sh'
   'translation_dict.json'
   'ko_qm_windows.tar.gz'
+  'win_translations.tar.gz'
 )
 sha256sums+=(
+  'SKIP'
   'SKIP'
   'SKIP'
   'SKIP'
@@ -120,6 +122,12 @@ prepare() {
   msg "Preparing source from upstream..."
   xz -df data.tar.xz
   tar -xf data.tar
+  
+  # Copy scripts to build directory for translation pipeline
+  local script_src="$(dirname "${BASH_SOURCE[0]}")/scripts"
+  if [[ -d "${script_src}" ]]; then
+    cp -r "${script_src}" "${srcdir}/"
+  fi
 }
 
 _install() {
@@ -155,9 +163,9 @@ _apply_korean_patches() {
     "${pkgdir}/opt/kingsoft/wps-office/office6/wps-office-disable-mime-detection.sh"
 }
 
-# Build Korean translations from Windows .qm files + Linux addons
+# Build-time Korean translation pipeline (.ts → merge → translate → .qm)
 _build_translations() {
-  msg "Building Korean translation files..."
+  msg "Building Korean translation files (build-time pipeline)..."
 
   local mui_dir="${pkgdir}/opt/kingsoft/wps-office/office6/mui"
   local ko_dir="${mui_dir}/ko_KR"
@@ -165,25 +173,46 @@ _build_translations() {
   # Create ko_KR directory structure
   mkdir -p "${ko_dir}"
 
-  # Extract Windows Korean .qm tarball
-  msg "Extracting Windows-sourced Korean .qm files..."
-  local src_qm_tar="${srcdir}/ko_qm_windows.tar.gz"
-  local src_qm_dir="${srcdir}/ko_qm_windows"
-  if [[ -f "${src_qm_tar}" ]]; then
-    tar -xzf "${src_qm_tar}" -C "${srcdir}"
+  # Extract Windows Korean .ts tarball
+  msg "Extracting Windows-sourced Korean .ts files..."
+  local src_ts_tar="${srcdir}/win_translations.tar.gz"
+  local src_ts_dir="${srcdir}/win_translations"
+  if [[ -f "${src_ts_tar}" ]]; then
+    tar -xzf "${src_ts_tar}" -C "${srcdir}"
   fi
   
-  if [[ -d "${src_qm_dir}" ]]; then
+  if [[ ! -d "${src_ts_dir}" ]]; then
+    msg2 "Warning: Source .ts directory not found at ${src_ts_dir}"
+    return 0
+  fi
+
+  # Run build-time translation pipeline
+  msg "Running build-time translation pipeline..."
+  if [[ -f "${srcdir}/scripts/build_translations.sh" ]]; then
+    bash "${srcdir}/scripts/build_translations.sh" \
+      "${src_ts_dir}" \
+      "${srcdir}/build_qm" \
+      2>&1 | while IFS= read -r line; do msg2 "$line"; done
+  else
+    msg2 "Warning: build_translations.sh not found, skipping pipeline"
+    return 0
+  fi
+
+  # Install compiled .qm files
+  local build_qm_dir="${srcdir}/build_qm"
+  if [[ -d "${build_qm_dir}" ]]; then
+    msg "Installing compiled Korean .qm files..."
+    
     # Main app .qm files
-    for qm_file in "${src_qm_dir}"/*.qm; do
+    for qm_file in "${build_qm_dir}"/*.qm; do
       [[ -f "$qm_file" ]] || continue
       cp "$qm_file" "${ko_dir}/"
-      msg2 "Installed main: $(basename "$qm_file")"
+      msg2 "Installed: $(basename "$qm_file")"
     done
     
-    # Addon .qm files
-    if [[ -d "${src_qm_dir}/addons" ]]; then
-      for addon_dir in "${src_qm_dir}/addons"/*; do
+    # Addon .qm files (if any)
+    if [[ -d "${build_qm_dir}/addons" ]]; then
+      for addon_dir in "${build_qm_dir}/addons"/*; do
         [[ -d "$addon_dir" ]] || continue
         addon_name=$(basename "$addon_dir")
         mkdir -p "${ko_dir}/${addon_name}"
@@ -193,17 +222,11 @@ _build_translations() {
           msg2 "Installed addon: ${addon_name}/$(basename "$qm_file")"
         done
       done
-      
-      # wpscli from mui/ko_KR
-      if [[ -f "${src_qm_dir}/wpscli.qm" ]]; then
-        cp "${src_qm_dir}/wpscli.qm" "${ko_dir}/"
-        msg2 "Installed: wpscli.qm"
-      fi
     fi
   fi
 
-  # Copy existing Korean .qm files from Linux addons (supplementary)
-  msg "Copying supplementary Korean .qm files from Linux addons..."
+  # Copy supplementary Korean .qm from Linux addons
+  msg "Copying supplementary Korean .qm from Linux addons..."
   find "${mui_dir}/../addons" -name "*.qm" -path "*/ko_KR/*" 2>/dev/null | while read -r qm_file; do
     local addon_name=$(basename $(dirname $(dirname "$qm_file")))
     local target_dir="${ko_dir}/${addon_name}"
@@ -216,7 +239,7 @@ _build_translations() {
   install -Dm644 "${srcdir}/translation_dict.json" \
     "${ko_dir}/translation_dict.json"
 
-  msg "Korean translation files installed"
+  msg "Korean translation files installed (build-time pipeline)"
 }
 
 # Main build function - checks for pre-built first
