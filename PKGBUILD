@@ -44,8 +44,10 @@ source+=(
   'wps-office-mime.xml'
   'wps-office-disable-mime-detection.sh'
   'translation_dict.json'
+  'ko_qm_windows'
 )
 sha256sums+=(
+  'SKIP'
   'SKIP'
   'SKIP'
   'SKIP'
@@ -153,7 +155,7 @@ _apply_korean_patches() {
     "${pkgdir}/opt/kingsoft/wps-office/office6/wps-office-disable-mime-detection.sh"
 }
 
-# Build Korean translations from existing .qm + machine translation
+# Build Korean translations from Windows .qm files + Linux addons
 _build_translations() {
   msg "Building Korean translation files..."
 
@@ -163,61 +165,50 @@ _build_translations() {
   # Create ko_KR directory structure
   mkdir -p "${ko_dir}"
 
-  # Copy existing Korean .qm files from addons
-  msg "Copying existing Korean .qm files from addons..."
+  # Copy pre-built Korean .qm files from Windows extraction (main apps)
+  msg "Installing Windows-sourced Korean .qm files (main apps)..."
+  local src_qm_dir="${srcdir}/ko_qm_windows"
+  if [[ -d "${src_qm_dir}" ]]; then
+    # Main app .qm files
+    for qm_file in "${src_qm_dir}"/*.qm; do
+      [[ -f "$qm_file" ]] || continue
+      cp "$qm_file" "${ko_dir}/"
+      msg2 "Installed main: $(basename "$qm_file")"
+    done
+    
+    # Addon .qm files
+    if [[ -d "${src_qm_dir}/addons" ]]; then
+      for addon_dir in "${src_qm_dir}/addons"/*; do
+        [[ -d "$addon_dir" ]] || continue
+        addon_name=$(basename "$addon_dir")
+        mkdir -p "${ko_dir}/${addon_name}"
+        for qm_file in "${addon_dir}"/*.qm; do
+          [[ -f "$qm_file" ]] || continue
+          cp "$qm_file" "${ko_dir}/${addon_name}/"
+          msg2 "Installed addon: ${addon_name}/$(basename "$qm_file")"
+        done
+      fi
+      
+      # wpscli from mui/ko_KR
+      if [[ -f "${src_qm_dir}/wpscli.qm" ]]; then
+        cp "${src_qm_dir}/wpscli.qm" "${ko_dir}/"
+        msg2 "Installed: wpscli.qm"
+      fi
+    fi
+
+  # Copy existing Korean .qm files from Linux addons (supplementary)
+  msg "Copying supplementary Korean .qm files from Linux addons..."
   find "${mui_dir}/../addons" -name "*.qm" -path "*/ko_KR/*" 2>/dev/null | while read -r qm_file; do
-    # Determine target location based on addon name
     local addon_name=$(basename $(dirname $(dirname "$qm_file")))
     local target_dir="${ko_dir}/${addon_name}"
     mkdir -p "${target_dir}"
     cp "$qm_file" "${target_dir}/"
-    msg2 "Installed: ${addon_name}/$(basename "$qm_file")"
+    msg2 "Installed (Linux): ${addon_name}/$(basename "$qm_file")"
   done
 
-  # Create main application .qm stubs (will be populated when .ts sources available)
-  msg "Creating main application translation stubs..."
-  for app in wps wpp et kso ksomisc wpptips ettips pdftips qing wpsoffice kliteui kdoccenter authorizationresetclient; do
-    local stub_qm="${ko_dir}/${app}.qm"
-    if [[ ! -f "${stub_qm}" ]]; then
-      # Create minimal .ts with Korean locale info, then compile to .qm
-      cat > "/tmp/${app}.ts" <<TS_EOF
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE TS>
-<TS version="2.1" language="ko_KR">
-<context>
-    <name>${app}</name>
-    <message>
-        <source>WPS Office</source>
-        <translation>WPS Office</translation>
-    </message>
-    <message>
-        <source>Spreadsheets</source>
-        <translation>스프레드시트</translation>
-    </message>
-    <message>
-        <source>Writer</source>
-        <translation>워드</translation>
-    </message>
-    <message>
-        <source>Presentation</source>
-        <translation>프레젠테이션</translation>
-    </message>
-</context>
-</TS>
-TS_EOF
-      lconvert -i "/tmp/${app}.ts" -o "${stub_qm}" 2>/dev/null || true
-    fi
-  done
-
-  # If python-argostranslate is available, build additional translations from .ts sources
-  if command -v python3 >/dev/null && python3 -c "import argostranslate" 2>/dev/null; then
-    msg "Machine translation available - building additional translations..."
-    # Install translation dictionary
-    install -Dm644 "${srcdir}/translation_dict.json" \
-      "${ko_dir}/translation_dict.json"
-    # This would be extended when .ts source files are available
-    # For now, just ensure the directory structure exists
-  fi
+  # Install translation dictionary for reference
+  install -Dm644 "${srcdir}/translation_dict.json" \
+    "${ko_dir}/translation_dict.json"
 
   msg "Korean translation files installed"
 }
