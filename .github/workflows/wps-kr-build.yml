@@ -32,6 +32,9 @@ jobs:
       sha256: ${{ steps.get_version.outputs.sha256 }}
       changed: ${{ steps.get_version.outputs.changed }}
       deb_url: ${{ steps.get_version.outputs.deb_url }}
+    env:
+      FORCE_BUILD: ${{ github.event.inputs.force_build }}
+      FORCE_VERSION: ${{ github.event.inputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
