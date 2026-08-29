@@ -7,7 +7,7 @@ pkgdesc="WPS Office with Korean locale, default yyyy-MM-dd date format, fixed MI
 arch=('x86_64')
 url="https://github.com/nahdd123uosackr/wps-office-kr"
 license=('LicenseRef-WPS-EULA')
-makedepends=('tar' 'xz' 'fontconfig' 'curl' 'jq' 'qttools5-dev-tools' 'python-pip')
+makedepends=('tar' 'xz' 'fontconfig' 'curl' 'jq' 'qt5-tools' 'python-pip')
 depends=(
   'fontconfig' 'libxrender' 'xdg-utils' 'glu'
   'libpulse' 'libxss' 'sqlite' 'libtool' 'libtiff'
@@ -44,7 +44,7 @@ source+=(
   'wps-office-mime.xml'
   'wps-office-disable-mime-detection.sh'
   'translation_dict.json'
-  'ko_qm_windows'
+  'ko_qm_windows.tar.gz'
 )
 sha256sums+=(
   'SKIP'
@@ -165,9 +165,14 @@ _build_translations() {
   # Create ko_KR directory structure
   mkdir -p "${ko_dir}"
 
-  # Copy pre-built Korean .qm files from Windows extraction (main apps)
-  msg "Installing Windows-sourced Korean .qm files (main apps)..."
+  # Extract Windows Korean .qm tarball
+  msg "Extracting Windows-sourced Korean .qm files..."
+  local src_qm_tar="${srcdir}/ko_qm_windows.tar.gz"
   local src_qm_dir="${srcdir}/ko_qm_windows"
+  if [[ -f "${src_qm_tar}" ]]; then
+    tar -xzf "${src_qm_tar}" -C "${srcdir}"
+  fi
+  
   if [[ -d "${src_qm_dir}" ]]; then
     # Main app .qm files
     for qm_file in "${src_qm_dir}"/*.qm; do
@@ -187,7 +192,7 @@ _build_translations() {
           cp "$qm_file" "${ko_dir}/${addon_name}/"
           msg2 "Installed addon: ${addon_name}/$(basename "$qm_file")"
         done
-      fi
+      done
       
       # wpscli from mui/ko_KR
       if [[ -f "${src_qm_dir}/wpscli.qm" ]]; then
@@ -195,6 +200,7 @@ _build_translations() {
         msg2 "Installed: wpscli.qm"
       fi
     fi
+  fi
 
   # Copy existing Korean .qm files from Linux addons (supplementary)
   msg "Copying supplementary Korean .qm files from Linux addons..."
