@@ -195,7 +195,7 @@ jobs:
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed \
             base-devel \
-            bsdtar \
+            libarchive \
             xz \
             tar \
             gzip \
