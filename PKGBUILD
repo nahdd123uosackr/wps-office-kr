@@ -7,7 +7,7 @@ pkgdesc="WPS Office with Korean locale, default yyyy-MM-dd date format, fixed MI
 arch=('x86_64')
 url="https://github.com/nahdd123uosackr/wps-office-kr"
 license=('LicenseRef-WPS-EULA')
-makedepends=('tar' 'xz' 'fontconfig' 'curl' 'jq' 'qt5-tools' 'python-pip')
+makedepends=('tar' 'xz' 'fontconfig' 'curl' 'jq' 'qt5-tools' 'python-pip' 'libarchive')
 depends=(
   'fontconfig' 'libxrender' 'xdg-utils' 'glu'
   'libpulse' 'libxss' 'sqlite' 'libtool' 'libtiff'
@@ -40,6 +40,7 @@ _gh_api="https://api.github.com/repos/${_gh_repo}"
 # Upstream source
 source_base="https://pubwps-wps365-obs.wpscdn.cn/download/Linux/${pkgver: -5}/wps-office_${pkgver}.AK.preread.sw.365"
 source_x86_64=("${source_base}_765469_amd64.deb")
+noextract=("wps-office_${pkgver}.AK.preread.sw.365_765469_amd64.deb")
 sha256sums_x86_64=('df89257786787ba4d22511438d6061c991762a354a66c65903858facd6f2da90')
 
 # Korean locale patches
@@ -127,6 +128,17 @@ prepare() {
   fi
   
   msg "Preparing source from upstream..."
+  
+  # Extract .deb file explicitly (noextract prevents makepkg auto-extraction)
+  if [[ ! -f data.tar.xz ]]; then
+    for deb_file in *.deb; do
+      [[ -f "$deb_file" ]] || continue
+      msg "Extracting $deb_file..."
+      ar x "$deb_file"
+      break
+    done
+  fi
+  
   xz -df data.tar.xz
   tar -xf data.tar
   
@@ -374,7 +386,9 @@ package_wps-office-kr() {
   export LC_ALL=C
 
   # Install license
-  install -Dm644 -t usr/share/licenses/${pkgname} opt/kingsoft/wps-office/office6/mui/default/*.html
+  if [[ -d opt/kingsoft/wps-office/office6/mui/default ]]; then
+    install -Dm644 -t usr/share/licenses/${pkgname} opt/kingsoft/wps-office/office6/mui/default/*.html
+  fi
 }
 
 package_wps-office-kr-mime() {
@@ -402,8 +416,10 @@ package_wps-office-kr-mime() {
   install -m644 "${srcdir}/wps-office-mime.xml" \
     "${pkgdir}/usr/share/mime/packages/wps-office.xml"
 
-  install -Dm644 -t "${pkgdir}/usr/share/licenses/${pkgname}" \
-    "${srcdir}/opt/kingsoft/wps-office/office6/mui/default/"*.html
+  if [[ -d "${srcdir}/opt/kingsoft/wps-office/office6/mui/default" ]]; then
+    install -Dm644 -t "${pkgdir}/usr/share/licenses/${pkgname}" \
+      "${srcdir}/opt/kingsoft/wps-office/office6/mui/default/"*.html
+  fi
 }
 
 package_wps-office-kr-fonts() {
@@ -437,7 +453,7 @@ package_wps-office-kr-fonts() {
     "${pkgdir}/usr/share/fontconfig/conf.default/40-wps-office.conf"
 
   install -Dm644 -t "${pkgdir}/usr/share/licenses/${pkgname}" \
-    "${srcdir}/opt/kingsoft/wps-office/office6/mui/default/"*.html
+    "${srcdir}/opt/kingsoft/wps-office/office6/mui/default/"*.html 2>/dev/null || true
 }
 
 # vim:set ts=2 sw=2 et:

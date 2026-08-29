@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      build: ${{ steps.get_version.outputs.build }}
       sha256: ${{ steps.get_version.outputs.sha256 }}
       changed: ${{ steps.get_version.outputs.changed }}
       deb_url: ${{ steps.get_version.outputs.deb_url }}
@@ -224,7 +225,7 @@ jobs:
 
       - name: Checkout repository inside container
         run: |
-          git clone --depth 0 https://github.com/${{ github.repository }}.git "${GITHUB_WORKSPACE}"
+          git clone --depth 1 https://github.com/${{ github.repository }}.git "${GITHUB_WORKSPACE}"
           cd "${GITHUB_WORKSPACE}"
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
@@ -250,6 +251,7 @@ jobs:
           git diff PKGBUILD
 
       - name: Download and verify source
+        id: download_source
         run: |
           DEB_URL="${{ needs.check-version.outputs.deb_url }}"
           DEB_FILE=$(basename "$DEB_URL")
@@ -370,7 +372,7 @@ jobs:
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
           name: WPS Office KR ${{ needs.check-version.outputs.version }}
-          body_path: ${{ needs.build.outputs.release_notes }}
+          body_path: ${{ needs.build.outputs.package_info_release_notes }}
           files: |
             dist/*.pkg.tar.zst
           draft: false
