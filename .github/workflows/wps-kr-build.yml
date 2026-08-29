@@ -52,7 +52,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 << 'EOF'
+          cat > /tmp/get_version.py << 'PYEOF'
           import requests
           import re
           import json
@@ -169,7 +169,9 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               for k, v in outputs.items():
                   f.write(f"{k}={v}\n")
-EOF
+          PYEOF
+          
+          python3 /tmp/get_version.py
 
   build:
     name: Build Package
