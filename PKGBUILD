@@ -48,7 +48,6 @@ source+=(
   'ko_KR_datetimeformat.patch'
   'ko_KR_controldatetimeformat.patch'
   'ko_KR_idstr.patch'
-  'ko_KR_lang.conf'
   '99-wps-office-font-rendering.conf'
   'wps-office-mime.xml'
   'wps-office-disable-mime-detection.sh'
