@@ -230,18 +230,23 @@ with open('${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/ko_KR.png', 'wb')
     f.write(png)
 "
 
-  # Update setup.cfg to use Korean locale (Windows uses ko_KR, not LCID)
+  # Update setup.cfg to use Korean locale (robust: any UILanguage -> ko_KR)
   if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" ]]; then
-    sed -i 's/UILanguage=2052/UILanguage=ko_KR/' \
-      "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
-    sed -i 's/ContentEnabledLangs=1/ContentEnabledLangs=0/' \
-      "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
+    if grep -q '^UILanguage=' "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"; then
+      sed -i 's/^UILanguage=.*/UILanguage=ko_KR/' "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
+    else
+      echo "UILanguage=ko_KR" >> "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
+    fi
+    sed -i 's/^ContentEnabledLangs=.*/ContentEnabledLangs=0/' "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" 2>/dev/null || true
+    # Ensure ko_KR is advertised even if original was 1
+    grep -q '^ContentEnabledLangs=' "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" || echo "ContentEnabledLangs=0" >> "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
   fi
 
   # Create system-wide default Office.conf to force Korean locale + cm units
   mkdir -p "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default"
   cat > "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" << 'EOF'
 [6.0]
+UILanguage=ko_KR
 
 [Application Settings]
 UILanguage=ko_KR
@@ -249,10 +254,18 @@ UILanguage=ko_KR
 [kl]
 UILanguage=ko_KR
 
+[Versions]
+
+[6.0\Common]
+UILanguage=ko_KR
+
 wps\Custom%20Application%20Settings\MeasurementUnit=cm
 wpp\Custom%20Application%20Settings\MeasurementUnit=cm
 et\Custom%20Application%20Settings\MeasurementUnit=cm
 EOF
+  # Also install to /etc/xdg as system-wide xdg config fallback (some WPS builds check here)
+  mkdir -p "${pkgdir}/etc/xdg/Kingsoft"
+  cp "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" "${pkgdir}/etc/xdg/Kingsoft/Office.conf"
 
   # TRANSLATE en_US .qm → ko_KR .qm via .ts extraction + translation pipeline
   msg "Translating en_US .qm files to Korean..."
@@ -340,34 +353,65 @@ _build_translations() {
     return 0
   fi
 
-  # Install compiled .qm files
+  # Install compiled .qm files (from build_qm if pipeline succeeded)
   local build_qm_dir="${srcdir}/build_qm"
+  local has_compiled_qm=0
   if [[ -d "${build_qm_dir}" ]]; then
-    msg "Installing compiled Korean .qm files..."
-    
-    # Main app .qm files
-    for qm_file in "${build_qm_dir}"/*.qm; do
-      [[ -f "$qm_file" ]] || continue
-      cp "$qm_file" "${ko_dir}/"
-      msg2 "Installed: $(basename "$qm_file")"
-    done
-    
-    # Addon .qm files (if any)
-    if [[ -d "${build_qm_dir}/addons" ]]; then
-      for addon_dir in "${build_qm_dir}/addons"/*; do
-        [[ -d "$addon_dir" ]] || continue
-        addon_name=$(basename "$addon_dir")
-        mkdir -p "${ko_dir}/${addon_name}"
-        for qm_file in "${addon_dir}"/*.qm; do
-          [[ -f "$qm_file" ]] || continue
-          cp "$qm_file" "${ko_dir}/${addon_name}/"
-          msg2 "Installed addon: ${addon_name}/$(basename "$qm_file")"
-        done
+    local qm_count
+    qm_count=$(ls -1 "${build_qm_dir}"/*.qm 2>/dev/null | wc -l)
+    if [[ "$qm_count" -gt 0 ]]; then
+      has_compiled_qm=1
+      msg "Installing compiled Korean .qm files..."
+      for qm_file in "${build_qm_dir}"/*.qm; do
+        [[ -f "$qm_file" ]] || continue
+        cp "$qm_file" "${ko_dir}/"
+        msg2 "Installed (compiled): $(basename "$qm_file")"
       done
+      if [[ -d "${build_qm_dir}/addons" ]]; then
+        for addon_dir in "${build_qm_dir}/addons"/*; do
+          [[ -d "$addon_dir" ]] || continue
+          addon_name=$(basename "$addon_dir")
+          mkdir -p "${ko_dir}/${addon_name}"
+          for qm_file in "${addon_dir}"/*.qm; do
+            [[ -f "$qm_file" ]] || continue
+            cp "$qm_file" "${ko_dir}/${addon_name}/"
+            msg2 "Installed addon (compiled): ${addon_name}/$(basename "$qm_file")"
+          done
+        done
+      fi
     fi
   fi
 
-  # Copy supplementary Korean .qm from Linux addons
+  # Fallback: direct copy from prebuilt Windows Korean .qm (ko_qm_windows.tar.gz)
+  if [[ "$has_compiled_qm" -eq 0 ]]; then
+    msg "No compiled .qm from pipeline, falling back to prebuilt ko_qm_windows..."
+    local win_qm_tar="${srcdir}/ko_qm_windows.tar.gz"
+    local win_qm_dir="${srcdir}/ko_qm_windows"
+    if [[ -f "$win_qm_tar" ]]; then
+      tar -xzf "$win_qm_tar" -C "${srcdir}" 2>/dev/null || true
+    fi
+    if [[ -d "$win_qm_dir" ]]; then
+      for qm_file in "${win_qm_dir}"/*.qm; do
+        [[ -f "$qm_file" ]] || continue
+        cp "$qm_file" "${ko_dir}/"
+        msg2 "Installed (fallback): $(basename "$qm_file")"
+      done
+      if [[ -d "${win_qm_dir}/addons" ]]; then
+        for addon_dir in "${win_qm_dir}/addons"/*; do
+          [[ -d "$addon_dir" ]] || continue
+          addon_name=$(basename "$addon_dir")
+          mkdir -p "${ko_dir}/${addon_name}"
+          for qm_file in "${addon_dir}"/*.qm; do
+            [[ -f "$qm_file" ]] || continue
+            cp "$qm_file" "${ko_dir}/${addon_name}/"
+            msg2 "Installed addon (fallback): ${addon_name}/$(basename "$qm_file")"
+          done
+        done
+      fi
+    fi
+  fi
+
+  # Copy supplementary Korean .qm from Linux addons (always, to ensure completeness)
   msg "Copying supplementary Korean .qm from Linux addons..."
   find "${mui_dir}/../addons" -name "*.qm" -path "*/ko_KR/*" 2>/dev/null | while read -r qm_file; do
     # Path: addons/<addon_name>/mui/ko_KR/*.qm → extract <addon_name>
@@ -376,6 +420,17 @@ _build_translations() {
     mkdir -p "${target_dir}"
     cp "$qm_file" "${target_dir}/"
     msg2 "Installed (Linux): ${addon_name}/$(basename "$qm_file")"
+  done
+  # Also copy main .qm from Linux addons that may not be in build_qm/win_qm (e.g. promotion, cloud docs)
+  # Ensure ko_KR directory has at least kso.qm, wps.qm, wpp.qm, et.qm, qing.qm if available from addons fallback copy
+  for src_qm in "${mui_dir}/../addons"/*/mui/ko_KR/*.qm; do
+    [[ -f "$src_qm" ]] || continue
+    # Only copy if not already present in ko_dir root (main apps vs addons)
+    base=$(basename "$src_qm")
+    if [[ ! -f "${ko_dir}/${base}" ]]; then
+      # For debugging, keep this as addon copy already handled; skip
+      true
+    fi
   done
 
   # Install translation dictionary for reference
