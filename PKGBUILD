@@ -238,7 +238,7 @@ with open('${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/ko_KR.png', 'wb')
       "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
   fi
 
-  # Create system-wide default Office.conf to force Korean locale
+  # Create system-wide default Office.conf to force Korean locale + cm units
   mkdir -p "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default"
   cat > "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" << 'EOF'
 [6.0]
@@ -248,7 +248,25 @@ UILanguage=1042
 
 [kl]
 UILanguage=1042
+
+wps\Custom%20Application%20Settings\MeasurementUnit=cm
+wpp\Custom%20Application%20Settings\MeasurementUnit=cm
+et\Custom%20Application%20Settings\MeasurementUnit=cm
 EOF
+
+  # OVERWRITE en_US .qm FILES WITH KOREAN TRANSLATIONS
+  # This forces Korean UI regardless of locale detection
+  msg "Overwriting en_US .qm files with Korean translations..."
+  if [[ -d "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR" ]]; then
+    for qm_file in "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR"/*.qm; do
+      [[ -f "$qm_file" ]] || continue
+      local qm_basename=$(basename "$qm_file")
+      if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/mui/en_US/${qm_basename}" ]]; then
+        cp "$qm_file" "${pkgdir}/opt/kingsoft/wps-office/office6/mui/en_US/${qm_basename}"
+        msg2 "Overwritten en_US/${qm_basename} with Korean translation"
+      fi
+    done
+  fi
 
   # Install fontconfig for improved font rendering (OnlyOffice-inspired)
   install -Dm644 "${srcdir}/99-wps-office-font-rendering.conf" \
