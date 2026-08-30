@@ -254,30 +254,40 @@ wpp\Custom%20Application%20Settings\MeasurementUnit=cm
 et\Custom%20Application%20Settings\MeasurementUnit=cm
 EOF
 
-  # OVERWRITE en_US .qm FILES WITH KOREAN TRANSLATIONS
-  # Use pre-built Korean .qm files from Windows version extraction
-  msg "Overwriting en_US .qm files with Korean translations..."
-  local ko_qm_src="${srcdir}/ko_qm_windows"
-  if [[ -d "${ko_qm_src}" ]]; then
-    for qm_file in "${ko_qm_src}"/*.qm; do
+  # TRANSLATE en_US .qm → ko_KR .qm via .ts extraction + translation pipeline
+  msg "Translating en_US .qm files to Korean..."
+  local en_us_dir="${pkgdir}/opt/kingsoft/wps-office/office6/mui/en_US"
+  local ko_kr_dir="${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR"
+  local ts_extract_dir="${srcdir}/ts_extracted"
+  mkdir -p "$ts_extract_dir"
+
+  # Step 1: Extract .ts files from en_US .qm files
+  if command -v lconvert &>/dev/null; then
+    for qm_file in "${en_us_dir}"/*.qm; do
       [[ -f "$qm_file" ]] || continue
-      local qm_basename=$(basename "$qm_file")
-      if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/mui/en_US/${qm_basename}" ]]; then
-        cp "$qm_file" "${pkgdir}/opt/kingsoft/wps-office/office6/mui/en_US/${qm_basename}"
-        msg2 "Overwritten en_US/${qm_basename} with Korean translation"
-      fi
+      local base=$(basename "$qm_file" .qm)
+      lconvert -i "$qm_file" -o "${ts_extract_dir}/${base}.ts" 2>/dev/null && \
+        msg2 "Extracted: ${base}.ts" || \
+        msg2 "Skip: ${base}.qm (extract failed)"
     done
   else
-    # Fallback: use ko_KR files if available
-    if [[ -d "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR" ]]; then
-      for qm_file in "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR"/*.qm; do
-        [[ -f "$qm_file" ]] || continue
-        local qm_basename=$(basename "$qm_file")
-        if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/mui/en_US/${qm_basename}" ]]; then
-          cp "$qm_file" "${pkgdir}/opt/kingsoft/wps-office/office6/mui/en_US/${qm_basename}"
-          msg2 "Overwritten en_US/${qm_basename} with Korean translation"
-        fi
-      done
+    msg2 "lconvert not available, using pre-extracted .ts from win_translations"
+  fi
+
+  # Step 2: Run translation pipeline (English .ts → Korean .qm)
+  if [[ -f "${srcdir}/scripts/build_translations.sh" ]]; then
+    local ts_source="${ts_extract_dir}"
+    if [[ ! "$(ls -A ${ts_source}/*.ts 2>/dev/null)" ]]; then
+      ts_source="${srcdir}/win_translations"
+    fi
+    if [[ -d "$ts_source" ]] && [[ "$(ls -A ${ts_source}/*.ts 2>/dev/null)" ]]; then
+      bash "${srcdir}/scripts/build_translations.sh" \
+        "$ts_source" \
+        "$ko_kr_dir" \
+        "${srcdir}/translation_dict.json" \
+        2>&1 | while IFS= read -r line; do msg2 "$line"; done
+    else
+      msg2 "Warning: No .ts files found for translation"
     fi
   fi
 
