@@ -178,6 +178,64 @@ LANDEOF
   cp "${pkgdir}/opt/kingsoft/wps-office/office6/mui/default/config/numberformat/ko_KR.cfg" \
     "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/config/numberformat.cfg"
 
+  # Copy essential config files from default to ko_KR (required for locale to work)
+  for cfg_file in downloadIrmUrl.cfg envelopesproperties.cfg localizedfunctionname.cfg \
+                  printpaper.cfg wpplist.cfg wpsfieldnumber.cfg wpslist.cfg; do
+    if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/mui/default/config/${cfg_file}" ]]; then
+      cp "${pkgdir}/opt/kingsoft/wps-office/office6/mui/default/config/${cfg_file}" \
+        "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/config/${cfg_file}"
+    fi
+  done
+
+  # Copy essential resource files from default to ko_KR
+  for res_file in DesignScience.png EULA_linux.html Privacy_Linux.html; do
+    if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/mui/default/${res_file}" ]]; then
+      cp "${pkgdir}/opt/kingsoft/wps-office/office6/mui/default/${res_file}" \
+        "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/${res_file}"
+    fi
+  done
+
+  # Copy .rcc resource files from default
+  for rcc_file in "${pkgdir}/opt/kingsoft/wps-office/office6/mui/default/"*.rcc; do
+    if [[ -f "$rcc_file" ]]; then
+      cp "$rcc_file" "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/"
+    fi
+  done
+
+  # Create ko_KR.png locale icon (simple 32x32 PNG with Korean text indicator)
+  python3 -c "
+import struct, zlib
+width, height = 32, 32
+# Create a simple blue/white icon
+raw_data = b''
+for y in range(height):
+    raw_data += b'\x00'  # filter byte
+    for x in range(width):
+        # Simple Korean flag-inspired design: blue background with white circle
+        cx, cy = width//2, height//2
+        dx, dy = x - cx, y - cy
+        dist = (dx*dx + dy*dy) ** 0.5
+        if dist < 10:
+            raw_data += bytes([255, 255, 255, 255])  # white circle
+        else:
+            raw_data += bytes([66, 133, 244, 255])  # blue background
+def make_chunk(chunk_type, data):
+    chunk = chunk_type + data
+    return struct.pack('>I', len(data)) + chunk + struct.pack('>I', zlib.crc32(chunk) & 0xffffffff)
+png = b'\x89PNG\r\n\x1a\n'
+png += make_chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0))
+png += make_chunk(b'IDAT', zlib.compress(raw_data))
+png += make_chunk(b'IEND', b'')
+with open('${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/ko_KR.png', 'wb') as f:
+    f.write(png)
+"
+
+  # Update setup.cfg to use Korean LCID (1042)
+  if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" ]]; then
+    sed -i 's/UILanguage=2052/UILanguage=1042/' \
+      "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
+  fi
+
   # Install fontconfig for improved font rendering (OnlyOffice-inspired)
   install -Dm644 "${srcdir}/99-wps-office-font-rendering.conf" \
     "${pkgdir}/opt/kingsoft/wps-office/office6/fonts/conf/99-wps-office-font-rendering.conf"
