@@ -106,13 +106,27 @@ do_system() {
 
   # 5) Office.conf 시스템 기본값
   for conf in "/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" "/etc/xdg/Kingsoft/Office.conf"; do
-    if [[ -f "$conf" ]] && grep -q "UILanguage=ko_KR" "$conf"; then ok "$conf UILanguage=ko_KR"; 
-    elif [[ -f "$conf" ]]; then
-      if [[ $CHECK_ONLY -eq 1 ]]; then fail "$conf UILanguage != ko_KR"; else
+    local needs_fix=0
+    if [[ ! -f "$conf" ]]; then
+      warn "$conf 없음"
+      needs_fix=1
+    else
+      grep -q "UILanguage=ko_KR" "$conf" || needs_fix=1
+      grep -q "forbidEditInForceLogin=false" "$conf" || needs_fix=1
+      grep -q "enableForceLogin=false" "$conf" || needs_fix=1
+      [[ $needs_fix -eq 0 ]] && ok "$conf 한글+로그인해제 설정됨" || true
+    fi
+    if [[ $needs_fix -eq 1 ]]; then
+      if [[ $CHECK_ONLY -eq 1 ]]; then fail "$conf 로그인/언어 설정 불일치 (수정 필요)"; else
         mkdir -p "$(dirname "$conf")"
         cat > "$conf" <<'EOF'
 [6.0]
 UILanguage=ko_KR
+forbidEditInForceLogin=false
+enableForceLogin=false
+enableForceLoginForFirstInstallDevice=false
+EnableForceLoginFori18n2c=false
+EnableLoginEntranceStyle=false
 
 [Application Settings]
 UILanguage=ko_KR
@@ -124,16 +138,22 @@ UILanguage=ko_KR
 
 [6.0\Common]
 UILanguage=ko_KR
+forbidEditInForceLogin=false
+enableForceLogin=false
+
+[common]
+do_not_detect_file_association_while_startup=true
+forbidEditInForceLogin=false
+enableForceLogin=false
+enableForceLoginForFirstInstallDevice=false
 
 wps\Custom%20Application%20Settings\MeasurementUnit=cm
 wpp\Custom%20Application%20Settings\MeasurementUnit=cm
 et\Custom%20Application%20Settings\MeasurementUnit=cm
 EOF
-        ok "$conf 재생성 -> ko_KR"
+        ok "$conf 재생성 -> ko_KR + 로그인해제"
         changed=1
       fi
-    else
-      warn "$conf 없음"
     fi
   done
 
@@ -185,31 +205,48 @@ do_user() {
     local conf_dir="$home/.config/Kingsoft"
 
     if [[ -f "$conf" ]]; then
-      if grep -q "UILanguage=ko_KR" "$conf"; then ok "$home Office.conf UILanguage=ko_KR";
+      local user_needs_fix=0
+      grep -q "UILanguage=ko_KR" "$conf" || user_needs_fix=1
+      grep -q "forbidEditInForceLogin=false" "$conf" || user_needs_fix=1
+      grep -q "enableForceLogin=false" "$conf" || user_needs_fix=1
+      if [[ $user_needs_fix -eq 0 ]]; then ok "$home Office.conf 한글+로그인해제 설정됨";
       else
-        if [[ $CHECK_ONLY -eq 1 ]]; then fail "$home Office.conf UILanguage != ko_KR (수정 필요)"; else
-          # 백업
+        if [[ $CHECK_ONLY -eq 1 ]]; then fail "$home Office.conf 로그인/언어 설정 불일치 (수정 필요)"; else
           cp -a "$conf" "$conf.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
           # 모든 UILanguage 라인을 ko_KR로
           if grep -q "UILanguage" "$conf"; then
             sed -i 's/UILanguage=.*/UILanguage=ko_KR/g' "$conf"
           else
-            # 섹션별 추가
             echo "" >> "$conf"
             echo "[6.0]" >> "$conf"
             echo "UILanguage=ko_KR" >> "$conf"
           fi
-          # 섹션 보장: [Application Settings], [kl], [6.0\Common]
-          for sec in "\[Application Settings\]" "\[kl\]" "\[6.0\\\\Common\]"; do
+          # 섹션 보장: [Application Settings], [kl], [6.0\Common], [common]
+          for sec in "\[Application Settings\]" "\[kl\]" "\[6.0\\\\Common\]" "\[common\]"; do
             if ! grep -q "$sec" "$conf"; then
               echo "" >> "$conf"
-              # 실제 sec 문자열은 대괄호 제거 후
               echo "$sec" | sed 's/\\//g' >> "$conf"
               echo "UILanguage=ko_KR" >> "$conf"
             fi
           done
-          # 중복 섹션 내 UILanguage 보정
-          ok "$home Office.conf 수정 -> ko_KR (백업 생성)"
+          # 로그인 강제 해제 키 보장 (각 섹션에)
+          for key in forbidEditInForceLogin enableForceLogin enableForceLoginForFirstInstallDevice EnableForceLoginFori18n2c; do
+            if ! grep -q "$key" "$conf"; then
+              # [6.0] 섹션 다음에 추가
+              if grep -q "^\[6.0\]" "$conf"; then
+                sed -i "/^\[6.0\]/a $key=false" "$conf" 2>/dev/null || echo "$key=false" >> "$conf"
+              else
+                echo "$key=false" >> "$conf"
+              fi
+            else
+              sed -i "s/$key=.*/$key=false/g" "$conf" 2>/dev/null || true
+            fi
+          done
+          # common 섹션에 do_not_detect 보장
+          grep -q "do_not_detect_file_association_while_startup" "$conf" || {
+            if grep -q "^\[common\]" "$conf"; then sed -i "/^\[common\]/a do_not_detect_file_association_while_startup=true" "$conf" 2>/dev/null; else echo -e "\n[common]\ndo_not_detect_file_association_while_startup=true" >> "$conf"; fi
+          }
+          ok "$home Office.conf 수정 -> ko_KR + 로그인해제 (백업 생성)"
         fi
       fi
     else
@@ -218,6 +255,10 @@ do_user() {
         cat > "$conf" <<'EOF'
 [6.0]
 UILanguage=ko_KR
+forbidEditInForceLogin=false
+enableForceLogin=false
+enableForceLoginForFirstInstallDevice=false
+EnableForceLoginFori18n2c=false
 
 [Application Settings]
 UILanguage=ko_KR
@@ -227,9 +268,16 @@ UILanguage=ko_KR
 
 [6.0\Common]
 UILanguage=ko_KR
+forbidEditInForceLogin=false
+enableForceLogin=false
+
+[common]
+do_not_detect_file_association_while_startup=true
+forbidEditInForceLogin=false
+enableForceLogin=false
 EOF
         chown "$real_user:" "$conf" 2>/dev/null || true
-        ok "$home Office.conf 생성 -> ko_KR"
+        ok "$home Office.conf 생성 -> ko_KR + 로그인해제"
       fi
     fi
 

@@ -221,7 +221,13 @@ jobs:
             python3 \
             python-pip \
             jq \
-            curl
+            curl \
+            qt5-tools
+          # Install ArgosTranslate for Korean machine translation (optional, graceful fallback if fails)
+          pip install --no-cache-dir argostranslate 2>&1 | tail -n 20 || true
+          # Pre-download en->ko model (best effort)
+          python3 -c "import argostranslate.package; argostranslate.package.update_package_index(); pkgs=[p for p in argostranslate.package.get_available_packages() if p.from_code=='en' and p.to_code=='ko']; print(f'Available en->ko packages: {len(pkgs)}'); [print(p) for p in pkgs[:2]]; pkgs[0].download() if pkgs else None; import argostranslate.package as ap; print('downloaded') if pkgs else print('no pkg')" 2>&1 | tail -n 20 || true
+          python3 -c "import argostranslate.package; pkgs=[p for p in argostranslate.package.get_available_packages() if p.from_code=='en' and p.to_code=='ko']; print('installing model...' ) if pkgs else print('no model'); import argostranslate.package as ap; ap.install_from_path(pkgs[0].path) if pkgs else None; print('model installed')" 2>&1 | tail -n 20 || echo "Argos model install skipped"
 
       - name: Checkout repository inside container
         run: |

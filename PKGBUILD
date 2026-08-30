@@ -248,11 +248,16 @@ with open('${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/ko_KR.png', 'wb')
     grep -q '^ContentEnabledLangs=' "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" || echo "ContentEnabledLangs=0" >> "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
   fi
 
-  # Create system-wide default Office.conf to force Korean locale + cm units
+  # Create system-wide default Office.conf to force Korean locale + cm units + disable forced login
   mkdir -p "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default"
   cat > "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" << 'EOF'
 [6.0]
 UILanguage=ko_KR
+forbidEditInForceLogin=false
+enableForceLogin=false
+enableForceLoginForFirstInstallDevice=false
+EnableForceLoginFori18n2c=false
+EnableLoginEntranceStyle=false
 
 [Application Settings]
 UILanguage=ko_KR
@@ -264,6 +269,14 @@ UILanguage=ko_KR
 
 [6.0\Common]
 UILanguage=ko_KR
+forbidEditInForceLogin=false
+enableForceLogin=false
+
+[common]
+do_not_detect_file_association_while_startup=true
+forbidEditInForceLogin=false
+enableForceLogin=false
+enableForceLoginForFirstInstallDevice=false
 
 wps\Custom%20Application%20Settings\MeasurementUnit=cm
 wpp\Custom%20Application%20Settings\MeasurementUnit=cm
@@ -554,9 +567,10 @@ package_wps-office-kr() {
   sed -i '2i [[ -f ~/.config/Kingsoft/fonts/fonts.conf ]] && export FONTCONFIG_FILE=~/.config/Kingsoft/fonts/fonts.conf' \
     usr/bin/{wps,wpp,et,wpspdf}
 
-  # Disable force login
-  sed -i '2i sed -i "s/enableForceLogin=true/enableForceLogin=false/" $HOME/.config/Kingsoft/Office.conf' \
-    usr/bin/{wps,wpp,et,wpspdf}
+  # Disable force login (comprehensive - covers all known keys)
+  for app in wps wpp et wpspdf; do
+    sed -i '2i # Disable forced login - allow editing without Kingsoft account\nif [[ -f "$HOME/.config/Kingsoft/Office.conf" ]]; then\n  for key in enableForceLogin forbidEditInForceLogin enableForceLoginForFirstInstallDevice EnableForceLoginFori18n2c; do\n    if grep -q "$key" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null; then\n      sed -i "s/$key=.*/$key=false/" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null\n    else\n      # Append to [6.0] or [common] section if exists, else append\n      if grep -q "^\\[6.0\\]" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null; then\n        sed -i "/^\\[6.0\\]/a $key=false" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null\n      elif grep -q "^\\[common\\]" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null; then\n        sed -i "/^\\[common\\]/a $key=false" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null\n      else\n        echo "$key=false" >> "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null\n      fi\n    fi\n  done\nfi' usr/bin/${app}
+  done
 
   # Clear WPS Office locale cache to force Korean on first run
   for app in wps wpp et wpspdf; do
