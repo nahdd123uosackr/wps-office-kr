@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = wps-office-kr
+
+[Action]
+Description = WPS Office KR 한글 설정 자동 적용
+When = PostTransaction
+Exec = /usr/bin/wps-office-kr-setup
+Depends = bash

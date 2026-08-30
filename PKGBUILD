@@ -43,6 +43,8 @@ source_x86_64=("${source_base}_765469_amd64.deb")
 noextract=("wps-office_${pkgver}.AK.preread.sw.365_765469_amd64.deb")
 sha256sums_x86_64=('df89257786787ba4d22511438d6061c991762a354a66c65903858facd6f2da90')
 
+install=wps-office-kr.install
+
 # Korean locale patches
 source+=(
   'ko_KR_datetimeformat.patch'
@@ -54,8 +56,12 @@ source+=(
   'translation_dict.json'
   'ko_qm_windows.tar.gz'
   'win_translations.tar.gz'
+  'wps-office-kr.install'
+  'wps-office-kr.hook'
 )
 sha256sums+=(
+  'SKIP'
+  'SKIP'
   'SKIP'
   'SKIP'
   'SKIP'
@@ -579,6 +585,16 @@ export LC_CTYPE=ko_KR.UTF-8' usr/bin/${app}
   for app in wps wpp et wpspdf; do
     sed -i '2a # Disable WPS Office MIME type detection at startup\nif [[ -x /usr/bin/wps-office-disable-mime-detection ]]; then\n  /usr/bin/wps-office-disable-mime-detection\nfi' usr/bin/${app}
   done
+
+  # Install post-install Korean setup script + hook (후속 프로세스)
+  install -Dm755 "${srcdir}/scripts/wps-office-kr-setup.sh" \
+    "${pkgdir}/usr/bin/wps-office-kr-setup"
+  # Wrapper for simple invocation (ALPM hook Exec needs no args)
+  install -Dm644 "${srcdir}/wps-office-kr.hook" \
+    "${pkgdir}/usr/share/libalpm/hooks/wps-office-kr.hook"
+  # Ensure .install file is tracked (makepkg validates)
+  install -Dm644 "${srcdir}/wps-office-kr.install" \
+    "${pkgdir}/usr/share/doc/${pkgname}/wps-office-kr.install" 2>/dev/null || true
 
   # Fix bsdtar warning
   export LC_ALL=C
