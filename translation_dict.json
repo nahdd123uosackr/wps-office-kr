@@ -149,5 +149,9 @@
   "Microsoft Excel 97-2003 Workbook(*.xls)": "Microsoft Excel 97-2003 통합 문서(*.xls)",
   "is the na": "나",
   "PERMUT(number,number_chosen)": "PERMUT(수, 선택_수)",
-  "GAMMALN(x)": "GAMMALN(x)"
+  "GAMMALN(x)": "GAMMALN(x)",
+  "Unprotect Book": "통합 문서 보호 해제",
+  "Right section": "오른쪽 구역",
+  "StdDevp": "표준편차P",
+  "Dark Style 2-Emphasize 5/Emphasize 6": "어두운 스타일 2-강조 5/강조 6"
 }

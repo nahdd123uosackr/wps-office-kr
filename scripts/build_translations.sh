@@ -110,26 +110,52 @@ def process_ts_file(ts_path, out_dir):
                 source = message.find('source')
                 translation = message.find('translation')
                 
-                if source is not None and source.text:
-                    src = source.text.strip()
+                # WPS .ts quirk: win_translations/*.ts have empty <source> and English in <translation>
+                # Handle both: prefer source if non-empty, else use translation as English source
+                eng_text = None
+                src_node = None
+                if source is not None and source.text and source.text.strip() != '':
+                    eng_text = source.text.strip()
+                    src_node = source
+                elif translation is not None and translation.text and translation.text.strip() != '':
+                    # translation holds English source (common for WPS lconvert-extracted .ts)
+                    eng_text = translation.text.strip()
+                    src_node = translation  # we will overwrite translation with Korean
+                    # Ensure source is populated for completeness
+                    if source is not None:
+                        source.text = eng_text
+                
+                if eng_text:
                     total += 1
+                    # Determine current Korean value
+                    current = translation.text or '' if translation is not None else ''
+                    trans_type = translation.get('type', '') if translation is not None else ''
                     
-                    if translation is not None:
-                        current = translation.text or ''
-                        trans_type = translation.get('type', '')
-                        
-                        # Needs translation if empty, same as source, or unfinished
-                        if not current or current == src or trans_type == 'unfinished':
-                            ko = translate_text(src)
-                            if ko and not ko.startswith('[KO]'):
-                                translation.text = ko
-                                if 'type' in translation.attrib:
-                                    del translation.attrib['type']
-                                translated += 1
+                    # Needs translation if empty, same as English, unfinished, or placeholder [KO]
+                    needs = False
+                    if not current or current.strip() == eng_text or trans_type == 'unfinished' or current.startswith('[KO]'):
+                        needs = True
+                    # Also if current has no Hangul, consider needing translation when dictionary has entry
+                    if eng_text in dictionary and current != dictionary[eng_text]:
+                        needs = True
+                    
+                    if needs and translation is not None:
+                        ko = translate_text(eng_text)
+                        if ko and not ko.startswith('[KO]'):
+                            translation.text = ko
+                            if 'type' in translation.attrib:
+                                del translation.attrib['type']
+                            translated += 1
+                        else:
+                            # Keep English if no translation available, don't mark as [KO] to avoid placeholder noise
+                            # Only mark if we want to flag missing
+                            if ko.startswith('[KO]'):
+                                # Don't overwrite with [KO] if we already have English - keep English for better UX
+                                # Mark as unfinished only if verbose mode would want it
+                                marked += 1
                             else:
                                 translation.text = ko
-                                translation.set('type', 'unfinished')
-                                marked += 1
+                            # Do not set unfinished to keep English visible
         
         # Write merged .ts
         out_ts = os.path.join(out_dir, os.path.basename(ts_path).replace('.ts', '_ko.ts'))
