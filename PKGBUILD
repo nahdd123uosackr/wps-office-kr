@@ -234,7 +234,21 @@ with open('${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/ko_KR.png', 'wb')
   if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" ]]; then
     sed -i 's/UILanguage=2052/UILanguage=1042/' \
       "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
+    sed -i 's/ContentEnabledLangs=1/ContentEnabledLangs=0/' \
+      "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
   fi
+
+  # Create system-wide default Office.conf to force Korean locale
+  mkdir -p "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default"
+  cat > "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" << 'EOF'
+[6.0]
+
+[Application Settings]
+UILanguage=1042
+
+[kl]
+UILanguage=1042
+EOF
 
   # Install fontconfig for improved font rendering (OnlyOffice-inspired)
   install -Dm644 "${srcdir}/99-wps-office-font-rendering.conf" \
@@ -441,6 +455,15 @@ package_wps-office-kr() {
   # Disable force login
   sed -i '2i sed -i "s/enableForceLogin=true/enableForceLogin=false/" $HOME/.config/Kingsoft/Office.conf' \
     usr/bin/{wps,wpp,et,wpspdf}
+
+  # Clear WPS Office locale cache to force Korean on first run
+  for app in wps wpp et wpspdf; do
+    sed -i '2a\
+# Clear stale locale cache to apply Korean UI\
+if [[ -f "$HOME/.config/Kingsoft/Office.conf" ]]; then\
+  sed -i "s/UILanguage=.*/UILanguage=1042/" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null\
+fi' usr/bin/${app}
+  done
 
   # Set default locale to Korean (for UI + font name display)
   # LANG: 기본 로케일
