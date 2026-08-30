@@ -4,9 +4,19 @@
 
 set -euo pipefail
 
-SRC_TS_DIR="${1:-/root/wpsoffice/win_translations}"
-OUT_QM_DIR="${2:-/root/wpsoffice/build_qm}"
-DICT_FILE="${3:-/root/wpsoffice/translation_dict.json}"
+SRC_TS_DIR="${1:-}"
+OUT_QM_DIR="${2:-}"
+DICT_FILE="${3:-}"
+
+if [[ -z "$SRC_TS_DIR" || -z "$OUT_QM_DIR" ]]; then
+  echo "Usage: $0 <src_ts_dir> <out_qm_dir> [dict_file]"
+  exit 1
+fi
+
+# Default dict file location (relative to build)
+if [[ -z "$DICT_FILE" ]]; then
+  DICT_FILE="${OUT_QM_DIR}/../translation_dict.json"
+fi
 
 mkdir -p "$OUT_QM_DIR"
 

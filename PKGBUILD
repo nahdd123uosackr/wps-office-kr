@@ -220,6 +220,7 @@ _build_translations() {
     bash "${srcdir}/scripts/build_translations.sh" \
       "${src_ts_dir}" \
       "${srcdir}/build_qm" \
+      "${srcdir}/translation_dict.json" \
       2>&1 | while IFS= read -r line; do msg2 "$line"; done
   else
     msg2 "Warning: build_translations.sh not found, skipping pipeline"
