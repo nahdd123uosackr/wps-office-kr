@@ -6,7 +6,7 @@ set -euo pipefail
 
 SRC_TS_DIR="${1:-/root/wpsoffice/win_translations}"
 OUT_QM_DIR="${2:-/root/wpsoffice/build_qm}"
-DICT_FILE="/root/wpsoffice/translation_dict.json"
+DICT_FILE="${3:-/root/wpsoffice/translation_dict.json}"
 
 mkdir -p "$OUT_QM_DIR"
 

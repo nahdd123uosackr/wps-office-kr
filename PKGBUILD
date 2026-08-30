@@ -48,6 +48,7 @@ source+=(
   'ko_KR_datetimeformat.patch'
   'ko_KR_controldatetimeformat.patch'
   'ko_KR_idstr.patch'
+  'ko_KR_lang.conf'
   '99-wps-office-font-rendering.conf'
   'wps-office-mime.xml'
   'wps-office-disable-mime-detection.sh'
@@ -165,6 +166,15 @@ _apply_korean_patches() {
   cp "${srcdir}/ko_KR_idstr.patch" \
     "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/config/idstr.cfg"
 
+  # Install lang.conf (required for WPS Office to recognize the locale)
+  cat > "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/lang.conf" << 'LANDEOF'
+[Language]
+DisplayName=한국어
+DisplayName[en_US]=Korean
+DisplayName[zh_CN]=韩语
+Icon=ko_KR.png
+LANDEOF
+
   # Copy Korean number format config from default to ko_KR
   cp "${pkgdir}/opt/kingsoft/wps-office/office6/mui/default/config/numberformat/ko_KR.cfg" \
     "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/config/numberformat.cfg"
@@ -247,7 +257,8 @@ _build_translations() {
   # Copy supplementary Korean .qm from Linux addons
   msg "Copying supplementary Korean .qm from Linux addons..."
   find "${mui_dir}/../addons" -name "*.qm" -path "*/ko_KR/*" 2>/dev/null | while read -r qm_file; do
-    local addon_name=$(basename $(dirname $(dirname "$qm_file")))
+    # Path: addons/<addon_name>/mui/ko_KR/*.qm → extract <addon_name>
+    local addon_name=$(basename $(dirname $(dirname $(dirname "$qm_file"))))
     local target_dir="${ko_dir}/${addon_name}"
     mkdir -p "${target_dir}"
     cp "$qm_file" "${target_dir}/"
@@ -373,9 +384,19 @@ package_wps-office-kr() {
   sed -i '2i sed -i "s/enableForceLogin=true/enableForceLogin=false/" $HOME/.config/Kingsoft/Office.conf' \
     usr/bin/{wps,wpp,et,wpspdf}
 
-  # Set default locale to Korean
-  sed -i '2i export LC_ALL=ko_KR.UTF-8' usr/bin/{wps,wpp,et,wpspdf}
-  sed -i '2i export LANG=ko_KR.UTF-8' usr/bin/{wps,wpp,et,wpspdf}
+  # Set default locale to Korean (for UI + font name display)
+  # LANG: 기본 로케일
+  # LC_ALL: 모든 로케일 카테고리 오버라이드
+  # LANGUAGE: 메시지 언어 우선순위 (Qt의 로케일 판단에 영향)
+  # LC_CTYPE: 문자 분류/변환 (폰트 이름 선택에 간접 영향)
+  for app in wps wpp et wpspdf; do
+    sed -i '2i\
+# Force Korean locale for UI and font name display\
+export LANG=ko_KR.UTF-8\
+export LC_ALL=ko_KR.UTF-8\
+export LANGUAGE=ko_KR:ko\
+export LC_CTYPE=ko_KR.UTF-8' usr/bin/${app}
+  done
 
   # Add MIME detection disable to launcher
   for app in wps wpp et wpspdf; do
