@@ -275,6 +275,7 @@ jobs:
 
       - name: Build package
         run: |
+          chown -R builder:builder "${GITHUB_WORKSPACE}/src" "${GITHUB_WORKSPACE}/PKGBUILD"
           sudo -u builder bash -c "
             cd \"${GITHUB_WORKSPACE}\"
             makepkg -s --noconfirm 2>&1 | tee build.log
