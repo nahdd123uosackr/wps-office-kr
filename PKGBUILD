@@ -230,9 +230,9 @@ with open('${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/ko_KR.png', 'wb')
     f.write(png)
 "
 
-  # Update setup.cfg to use Korean LCID (1042)
+  # Update setup.cfg to use Korean locale (Windows uses ko_KR, not LCID)
   if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" ]]; then
-    sed -i 's/UILanguage=2052/UILanguage=1042/' \
+    sed -i 's/UILanguage=2052/UILanguage=ko_KR/' \
       "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
     sed -i 's/ContentEnabledLangs=1/ContentEnabledLangs=0/' \
       "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
@@ -244,10 +244,10 @@ with open('${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR/ko_KR.png', 'wb')
 [6.0]
 
 [Application Settings]
-UILanguage=1042
+UILanguage=ko_KR
 
 [kl]
-UILanguage=1042
+UILanguage=ko_KR
 
 wps\Custom%20Application%20Settings\MeasurementUnit=cm
 wpp\Custom%20Application%20Settings\MeasurementUnit=cm
@@ -502,7 +502,7 @@ package_wps-office-kr() {
     sed -i '2a\
 # Clear stale locale cache to apply Korean UI\
 if [[ -f "$HOME/.config/Kingsoft/Office.conf" ]]; then\
-  sed -i "s/UILanguage=.*/UILanguage=1042/" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null\
+  sed -i "s/UILanguage=.*/UILanguage=ko_KR/" "$HOME/.config/Kingsoft/Office.conf" 2>/dev/null\
 fi' usr/bin/${app}
   done
 
