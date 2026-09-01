@@ -292,13 +292,16 @@ jobs:
           # Save SHA256 for later
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           
-          # Move to source location (PKGBUILD expects wps-office_*_amd64.deb)
-          mv "$DEB_FILE" wps-office_${VERSION}_amd64.deb 2>/dev/null || mv "$DEB_FILE" . 2>/dev/null || true
-          ls -lh wps-office_*.deb 2>&1 | head
+          # Keep deb in workspace root for PKGBUILD prepare() and also ensure src exists for makepkg
+          mv "$DEB_FILE" wps-office_${VERSION}_amd64.deb 2>/dev/null || true
+          mkdir -p src
+          cp -a wps-office_${VERSION}_amd64.deb src/ 2>/dev/null || true
+          ls -lh wps-office_*.deb src/*.deb 2>&1 | head
 
       - name: Build package
         run: |
-          chown -R builder:builder "${GITHUB_WORKSPACE}/src" "${GITHUB_WORKSPACE}/PKGBUILD"
+          mkdir -p "${GITHUB_WORKSPACE}/src"
+          chown -R builder:builder "${GITHUB_WORKSPACE}/src" "${GITHUB_WORKSPACE}/PKGBUILD" 2>/dev/null || chown -R builder:builder "${GITHUB_WORKSPACE}" 2>/dev/null || true
           sudo -u builder bash -c "
             cd \"${GITHUB_WORKSPACE}\"
             makepkg -s --noconfirm 2>&1 | tee build.log
