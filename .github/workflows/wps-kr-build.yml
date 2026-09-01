@@ -251,10 +251,10 @@ jobs:
           BUILD="${{ needs.check-version.outputs.build }}"
           DEB_URL="${{ needs.check-version.outputs.deb_url }}"
           
-          # Update PKGBUILD
+          # Update PKGBUILD - CN base uses _get_source_url, so only pkgver
           sed -i "s/pkgver=.*/pkgver=${VERSION}/" PKGBUILD
-          sed -i "s|source_base=.*|source_base=\"https://pubwps-wps365-obs.wpscdn.cn/download/Linux/${BUILD}/wps-office_${VERSION}.AK.preread.sw.365\"|" PKGBUILD
-          sed -i "s|source_x86_64=.*|source_x86_64=(\"${DEB_URL}\")|" PKGBUILD
+          # For CN base, source is generated via _get_source_url, no source_base to update
+          # Keep DEB_URL for verification but PKGBUILD will download via makepkg
           
           # Show changes
           git diff PKGBUILD
@@ -262,11 +262,25 @@ jobs:
       - name: Download and verify source
         id: download_source
         run: |
-          DEB_URL="${{ needs.check-version.outputs.deb_url }}"
-          DEB_FILE=$(basename "$DEB_URL")
+          # CN base: source URL is time-signed via _get_source_url, so we generate it here
+          VERSION="${{ needs.check-version.outputs.version }}"
+          # Generate CN URL via same logic as PKGBUILD _get_source_url
+          furl="https://wps-linux-personal.wpscdn.cn/wps/download/ep/Linux2023/${VERSION##*.}/wps-office_${VERSION}.AK.preread.sw.Personal_765474_amd64.deb"
+          uri="${furl#https://wps-linux-personal.wpscdn.cn}"
+          secrityKey='7f8faaaa468174dc1c9cd62e5f218a5b'
+          timestamp10=$(date '+%s')
+          md5hash=$(echo -n "${secrityKey}${uri}${timestamp10}" | md5sum)
+          DEB_URL="${furl}?t=${timestamp10}&k=${md5hash%% *}"
+          echo "Generated CN DEB_URL: $DEB_URL"
+          DEB_FILE="wps-office_${VERSION}_amd64.deb"
           
           echo "Downloading: $DEB_URL"
-          wget -q --show-progress "$DEB_URL" -O "$DEB_FILE"
+          wget -q --show-progress "$DEB_URL" -O "$DEB_FILE" || {
+            echo "CN download failed, trying fallback 365 URL: ${{ needs.check-version.outputs.deb_url }}"
+            DEB_URL="${{ needs.check-version.outputs.deb_url }}"
+            DEB_FILE=$(basename "$DEB_URL" | cut -d'?' -f1)
+            wget -q --show-progress "$DEB_URL" -O "$DEB_FILE"
+          }
           
           # Compute SHA256
           SHA256=$(sha256sum "$DEB_FILE" | cut -d' ' -f1)
@@ -278,9 +292,9 @@ jobs:
           # Save SHA256 for later
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           
-          # Move to source location
-          mkdir -p src
-          mv "$DEB_FILE" src/
+          # Move to source location (PKGBUILD expects wps-office_*_amd64.deb)
+          mv "$DEB_FILE" wps-office_${VERSION}_amd64.deb 2>/dev/null || mv "$DEB_FILE" . 2>/dev/null || true
+          ls -lh wps-office_*.deb 2>&1 | head
 
       - name: Build package
         run: |
