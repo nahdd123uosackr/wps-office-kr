@@ -1,4 +1,7 @@
-# Maintainer: WPS Office Korean Patch Project (CN base)
+# Maintainer: WPS Office Korean Patch Project (CN base - actively reflects wps-office-cn AUR)
+# Base PKGBUILD: wps-office-cn AUR (https://aur.archlinux.org/packages/wps-office-cn)
+# Korean patches added on top: locale ko_KR, yyyy-MM-dd, MIME/font, login bypass
+
 pkgbase=wps-office-kr
 pkgname=('wps-office-kr' 'wps-office-kr-mime' 'wps-office-kr-fonts')
 pkgver=12.1.2.28080
@@ -7,38 +10,14 @@ pkgdesc="WPS Office with Korean locale, default yyyy-MM-dd date format, fixed MI
 arch=('x86_64')
 url="https://github.com/nahdd123uosackr/wps-office-kr"
 license=('LicenseRef-WPS-EULA')
+options=('!emptydirs')
 makedepends=('tar' 'xz' 'fontconfig' 'curl' 'jq' 'qt5-tools' 'python-pip' 'libarchive')
-depends=(
-  'fontconfig' 'libxrender' 'xdg-utils' 'glu'
-  'libpulse' 'libxss' 'sqlite' 'libtool' 'libtiff'
-  'libxslt' 'libjpeg-turbo' 'libpng' 'freetype2'
-  'desktop-file-utils' 'shared-mime-info' 'hicolor-icon-theme'
-  'sdl2' 'libglvnd' 'xorg-mkfontscale')
-optdepends=(
-  'wps-office-kr-fonts: Korean fonts provided by WPS Office'
-  'ttf-liberation: Metric-compatible fonts for MS Office compatibility (Liberation Sans/Serif/Mono)'
-  'ttf-carlito: Metric-compatible font for Calibri'
-  'ttf-caladea: Metric-compatible font for Cambria'
-  'ttf-opensans: Helvetica/Arial alternative (Open Sans)'
-  'noto-fonts: Full Unicode coverage fallback (Sans/Serif/Mono/CJK/Emoji/Math)'
-  'noto-fonts-cjk: Korean/Chinese/Japanese font support'
-  'noto-fonts-emoji: Color emoji support (Noto Color Emoji)'
-  'noto-fonts-extra: Math fonts (STIX, Latin Modern, XITS)'
-  'tex-gyre-fonts: Math fonts (XITS Math, Latin Modern Math, TeX Gyre)'
-  'ttf-ms-fonts: Microsoft core fonts (AUR) for perfect compatibility'
-  'cups: for printing support'
-  'pango: for complex text layout support'
-  'python-argostranslate: offline machine translation for Korean .qm generation')
-conflicts=('wps-office' 'wps-office-365' 'wps-office-cn' 'wps-office-mime')
-provides=('wps-office' 'wps-office-mime')
-options=(!strip !zipman !debug !emptydirs)
 
-# GitHub Release configuration
+# GitHub Release
 _gh_repo="nahdd123uosackr/wps-office-kr"
 _gh_api="https://api.github.com/repos/${_gh_repo}"
 
-# Upstream source - CN base (archlinux wps-office-cn AUR)
-# https://wps-linux-personal.wpscdn.cn/wps/download/ep/Linux2023/${build}/wps-office_${pkgver}.AK.preread.sw.Personal_765474_amd64.deb?t=...&k=...
+# Upstream CN source - actively reflects wps-office-cn AUR _get_source_url
 _get_source_url() {
     local furl="https://wps-linux-personal.wpscdn.cn/wps/download/ep/Linux2023/${pkgver##*.}/wps-office_${pkgver}.AK.preread.sw.Personal_765474_$1.deb"
     local uri="${furl#https://wps-linux-personal.wpscdn.cn}"
@@ -52,7 +31,7 @@ sha256sums_x86_64=('2fa999f60a71e21093ab49ef6d7f61d7668c844bfebf30907d2c290e460f
 
 install=wps-office-kr.install
 
-# Korean locale patches
+# Korean locale patches (on top of CN base)
 source+=(
   'ko_KR_datetimeformat.patch'
   'ko_KR_controldatetimeformat.patch'
@@ -80,7 +59,6 @@ sha256sums+=(
   'SKIP'
 )
 
-# Check for pre-built packages on GitHub Release
 _check_prebuilt() {
   local tag="v${pkgver}"
   local api_url="${_gh_api}/releases/tags/${tag}"
@@ -117,32 +95,27 @@ prepare() {
     return 0
   fi
   msg "Preparing source from upstream (CN base)..."
-  # CN deb is downloaded as wps-office_${pkgver}_amd64.deb - extract data.tar.xz
-  # Find deb file (noextract not needed for CN - we handle manually)
-  local deb_file
-  deb_file=$(ls wps-office_*_amd64.deb 2>/dev/null | head -1)
-  if [[ -z "$deb_file" ]]; then
-    for f in *.deb; do [[ -f "$f" ]] && deb_file="$f" && break; done
-  fi
-  if [[ -n "$deb_file" && -f "$deb_file" ]]; then
-    msg "Extracting $deb_file..."
-    # CN deb data.tar.xz is inside deb, use ar
-    if [[ ! -f data.tar.xz ]]; then
-      ar x "$deb_file"
-    fi
+  # CN AUR: bsdtar -xpf data.tar.xz (ar already handled by makepkg source extraction, but we handle both)
+  if [[ ! -f data.tar.xz ]]; then
+    for deb_file in wps-office_*_amd64.deb *.deb; do
+      [[ -f "$deb_file" ]] || continue
+      msg "Extracting $deb_file..."
+      ar x "$deb_file" 2>/dev/null || true
+      break
+    done
   fi
   if [[ -f data.tar.xz ]]; then
     bsdtar -xpf data.tar.xz
   elif [[ -f data.tar ]]; then
     bsdtar -xpf data.tar
-  else
-    msg "No data.tar.xz found after ar extraction"
   fi
-  # CN AUR: fix office path from /opt/kingsoft/wps-office to /usr/lib
+  # CN AUR: fix launchers /opt -> /usr/lib (actively reflected)
   if [[ -d usr/bin ]]; then
-    msg "Patching launchers /opt -> /usr/lib (CN base)..."
+    msg "Patching launchers /opt/kingsoft/wps-office -> /usr/lib (CN base)..."
     sed -i 's|/opt/kingsoft/wps-office|/usr/lib|' usr/bin/* 2>/dev/null || true
+    [[ "$CARCH" = "aarch64" ]] && sed -i '2a export LD_PRELOAD=/usr/lib/libfreetype.so' usr/bin/* 2>/dev/null || true
   fi
+  # Keep wps_한글_패치 compatibility: also handle opt path if needed (no-op for CN)
   local script_src="$(dirname "${BASH_SOURCE[0]}")/scripts"
   if [[ -d "${script_src}" ]]; then
     cp -r "${script_src}" "${srcdir}/"
@@ -154,7 +127,7 @@ _install() {
 }
 
 _apply_korean_patches() {
-  # CN base: office is at /usr/lib/office6
+  # CN base: office is at /usr/lib/office6 (actively reflects wps-office-cn)
   local office_root="${pkgdir}/usr/lib/office6"
   mkdir -p "${office_root}/mui/ko_KR/config"
   cp "${srcdir}/ko_KR_datetimeformat.patch" "${office_root}/mui/ko_KR/config/datetimeformat.cfg"
@@ -215,10 +188,6 @@ with open('${office_root}/mui/ko_KR/ko_KR.png', 'wb') as f:
     sed -i 's/^ContentEnabledLangs=.*/ContentEnabledLangs=0/' "${office_root}/cfgs/setup.cfg" 2>/dev/null || true
     grep -q '^ContentEnabledLangs=' "${office_root}/cfgs/setup.cfg" || echo "ContentEnabledLangs=0" >> "${office_root}/cfgs/setup.cfg"
   fi
-  # Also patch opt path if exists (for compatibility)
-  if [[ -f "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" ]]; then
-    sed -i 's/^UILanguage=.*/UILanguage=ko_KR/' "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/setup.cfg" 2>/dev/null || true
-  fi
   mkdir -p "${office_root}/cfgs/default"
   cat > "${office_root}/cfgs/default/Office.conf" << 'EOF'
 [6.0]
@@ -254,11 +223,6 @@ et\Custom%20Application%20Settings\MeasurementUnit=cm
 EOF
   mkdir -p "${pkgdir}/etc/xdg/Kingsoft"
   cp "${office_root}/cfgs/default/Office.conf" "${pkgdir}/etc/xdg/Kingsoft/Office.conf"
-  # Keep wps_한글_패치 compatible: also ensure /opt path has Office.conf if opt exists
-  if [[ -d "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs" ]]; then
-    mkdir -p "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default"
-    cp "${office_root}/cfgs/default/Office.conf" "${pkgdir}/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" 2>/dev/null || true
-  fi
   local en_us_dir="${office_root}/mui/en_US"
   local ko_kr_dir="${office_root}/mui/ko_KR"
   local ts_extract_dir="${srcdir}/ts_extracted"
@@ -283,16 +247,14 @@ EOF
       msg2 "Warning: No .ts files found for translation"
     fi
   fi
-  install -Dm644 "${srcdir}/99-wps-office-font-rendering.conf" "${office_root}/fonts/conf/99-wps-office-font-rendering.conf" 2>/dev/null || install -Dm644 "${srcdir}/99-wps-office-font-rendering.conf" "${pkgdir}/opt/kingsoft/wps-office/office6/fonts/conf/99-wps-office-font-rendering.conf" 2>/dev/null || true
-  install -Dm644 "${srcdir}/wps-office-mime.xml" "${office_root}/mime/wps-office-mime.xml" 2>/dev/null || true
-  install -Dm755 "${srcdir}/wps-office-disable-mime-detection.sh" "${office_root}/wps-office-disable-mime-detection.sh" 2>/dev/null || true
+  install -Dm644 "${srcdir}/99-wps-office-font-rendering.conf" "${office_root}/fonts/conf/99-wps-office-font-rendering.conf"
+  install -Dm644 "${srcdir}/wps-office-mime.xml" "${office_root}/mime/wps-office-mime.xml"
+  install -Dm755 "${srcdir}/wps-office-disable-mime-detection.sh" "${office_root}/wps-office-disable-mime-detection.sh"
 }
 
 _build_translations() {
   msg "Building Korean translation files (build-time pipeline)..."
   local mui_dir="${pkgdir}/usr/lib/office6/mui"
-  # Fallback to opt if CN not found (365 leftover)
-  [[ -d "$mui_dir" ]] || mui_dir="${pkgdir}/opt/kingsoft/wps-office/office6/mui"
   local ko_dir="${mui_dir}/ko_KR"
   mkdir -p "${ko_dir}"
   local src_ts_tar="${srcdir}/win_translations.tar.gz"
@@ -382,11 +344,6 @@ _build_translations() {
   done
   install -Dm644 "${srcdir}/translation_dict.json" "${ko_dir}/translation_dict.json" 2>/dev/null || true
   msg "Korean translation files installed (build-time pipeline)"
-  # Compatibility: also ensure /opt path has ko_KR if base was CN but wps_한글_패치 expects /opt fallback
-  if [[ -d "${pkgdir}/opt/kingsoft/wps-office/office6/mui" && ! -d "${pkgdir}/opt/kingsoft/wps-office/office6/mui/ko_KR" ]]; then
-    mkdir -p "${pkgdir}/opt/kingsoft/wps-office/office6/mui"
-    cp -a "${ko_dir}" "${pkgdir}/opt/kingsoft/wps-office/office6/mui/" 2>/dev/null || true
-  fi
 }
 
 build() {
@@ -408,19 +365,24 @@ build() {
       fi
     fi
   fi
-  msg "Building from source (CN base)..."
+  msg "Building from source (CN base, actively reflects wps-office-cn AUR)..."
   return 0
 }
 
+# Actively reflects wps-office-cn AUR package_wps-office-cn()
 package_wps-office-kr() {
   depends=('fontconfig' 'xorg-mkfontscale' 'libxrender' 'desktop-file-utils' 'shared-mime-info' 'xdg-utils' 'glu' 'sdl2' 'libpulse' 'hicolor-icon-theme' 'libxss' 'sqlite' 'libtool' 'libxslt' 'libjpeg-turbo')
-  optdepends=('wps-office-kr-fonts: Korean fonts provided by WPS Office'
-    'ttf-liberation: Metric-compatible fonts for MS Office compatibility'
-    'ttf-carlito: Metric-compatible font for Calibri'
-    'ttf-ms-fonts: Microsoft core fonts (AUR)'
-    'cups: for printing support'
-    'pango: for complex text layout support')
-  conflicts=('wps-office' 'wps-office-365' 'wps-office-cn' 'wps-office-mime')
+  optdepends=('cups: for printing support'
+              'libjpeg-turbo: JPEG image codec support'
+              'pango: for complex (right-to-left) text support'
+              'curl: An URL retrieval utility and library'
+              'ttf-wps-fonts: Symbol fonts required by wps-office'
+              'ttf-ms-fonts: Microsft Fonts recommended for wps-office'
+              'wps-office-fonts: FZ TTF fonts provided by wps community'
+              'wps-office-mime-cn: Use mime files provided by Kingsoft'
+              'wps-office-mui-zh-cn: zh_CN support for WPS Office'
+              'wps-office-kr-fonts: Korean fonts provided by WPS Office')
+  conflicts=('wps-office' 'wps-office-365' 'wps-office-cn' 'wps-office-mime' 'kingsoft-office')
   provides=('wps-office' 'wps-office-mime')
   install="${pkgname}.install"
   if [[ -n "${USE_PREBUILT}" ]] && [[ "${USE_PREBUILT}" != "0" ]]; then
@@ -433,34 +395,30 @@ package_wps-office-kr() {
       return 0
     fi
   fi
-  # CN base: office6 is at /usr/lib/office6
+  # --- CN base: actively reflects package_wps-office-cn() ---
   cd "${srcdir}/opt/kingsoft/wps-office/"
   install -d "${pkgdir}/usr/lib"
   cp -r office6 "${pkgdir}/usr/lib"
   rm "${pkgdir}/usr/lib/office6/libstdc++.so"* 2>/dev/null || true
   rm "${pkgdir}/usr/lib/office6/libjpeg.so"* 2>/dev/null || true
+  [[ "$CARCH" = "aarch64" ]] && rm "${pkgdir}"/usr/lib/office6/libfreetype.so* 2>/dev/null || true
   install -Dm644 -t "${pkgdir}/usr/share/licenses/${pkgname}" office6/mui/default/*.html 2>/dev/null || true
   rm -r "${pkgdir}/usr/lib/office6/mui/en_US/resource/help" 2>/dev/null || true
-  # Keep zh_CN removal optional - keep for compatibility but not needed
-  # rm -r "${pkgdir}/usr/lib/office6/mui/zh_CN" 2>/dev/null || true
+  # Korean patch: add ko_KR on top of CN base (wps_한글_패치 호환)
   _apply_korean_patches
   _build_translations
   cd "${pkgdir}"
   rm -f usr/lib/office6/lib{jpeg,stdc++}.so* 2>/dev/null || true
   install -d usr/share/fontconfig/conf.avail
   install -d usr/share/fontconfig/conf.default
-  # fontconfig path: CN base has office6 at /usr/lib, fonts/conf is there
   if [[ -f usr/lib/office6/fonts/conf/99-wps-office-font-rendering.conf ]]; then
     install -m644 usr/lib/office6/fonts/conf/99-wps-office-font-rendering.conf usr/share/fontconfig/conf.avail/99-wps-office-font-rendering.conf
-  elif [[ -f opt/kingsoft/wps-office/office6/fonts/conf/99-wps-office-font-rendering.conf ]]; then
-    install -m644 opt/kingsoft/wps-office/office6/fonts/conf/99-wps-office-font-rendering.conf usr/share/fontconfig/conf.avail/99-wps-office-font-rendering.conf
   fi
   ln -sf ../conf.avail/99-wps-office-font-rendering.conf usr/share/fontconfig/conf.default/99-wps-office-font-rendering.conf 2>/dev/null || true
   install -d usr/share/mime/packages
   install -m644 "${srcdir}/wps-office-mime.xml" usr/share/mime/packages/wps-office.xml 2>/dev/null || true
-  # CN deb already has mime in /usr/share/mime, ensure ours overrides
   install -m755 usr/lib/office6/wps-office-disable-mime-detection.sh usr/bin/wps-office-disable-mime-detection 2>/dev/null || install -m755 "${srcdir}/wps-office-disable-mime-detection.sh" usr/bin/wps-office-disable-mime-detection 2>/dev/null || true
-  # Install binaries and desktop files from CN
+  # CN base: install launchers, desktop files, icons, fonts, menu (actively reflected)
   install -d "${pkgdir}/usr/bin"
   if [[ -d "${srcdir}/usr/bin" ]]; then
     install -m755 "${srcdir}/usr/bin"/* "${pkgdir}/usr/bin" 2>/dev/null || true
@@ -480,11 +438,11 @@ package_wps-office-kr() {
   if [[ -f "${srcdir}/etc/xdg/menus/applications-merged/wps-office.menu" ]]; then
     install -Dm644 "${srcdir}/etc/xdg/menus/applications-merged/wps-office.menu" "${pkgdir}/etc/xdg/menus/applications-merged/wps-office.menu"
   fi
-  # Fonts
   if [[ -d "${srcdir}/usr/share/fonts" ]]; then
     install -d "${pkgdir}/usr/share/fonts"
     cp -r "${srcdir}/usr/share/fonts"/* "${pkgdir}/usr/share/fonts" 2>/dev/null || true
   fi
+  # Korean patch: desktop categories, IME, fontconfig, login bypass, locale (on top of CN)
   sed -i 's|Categories=.*|&Office;|' usr/share/applications/*.desktop 2>/dev/null || true
   sed -i '2i [[ "$XMODIFIERS" == "@im=fcitx" ]] && export QT_IM_MODULE=fcitx' usr/bin/{wps,wpp,et,wpspdf} 2>/dev/null || true
   sed -i '2i [[ -f ~/.config/Kingsoft/fonts/fonts.conf ]] && export FONTCONFIG_FILE=~/.config/Kingsoft/fonts/fonts.conf' usr/bin/{wps,wpp,et,wpspdf} 2>/dev/null || true
@@ -516,11 +474,10 @@ export LC_CTYPE=ko_KR.UTF-8' usr/bin/${app} 2>/dev/null || true
   if [[ -d usr/lib/office6/mui/default ]]; then
     install -Dm644 -t usr/share/licenses/${pkgname} usr/lib/office6/mui/default/*.html 2>/dev/null || true
   fi
-  # Compatibility symlink for old /opt path (wps_한글_패치 and 365 users)
-  mkdir -p "${pkgdir}/opt/kingsoft/wps-office"
-  ln -sf /usr/lib/office6 "${pkgdir}/opt/kingsoft/wps-office/office6" 2>/dev/null || true
+  # Only /usr/lib - no /opt duplication (user request)
 }
 
+# Actively reflects wps-office-mime-cn AUR
 package_wps-office-kr-mime() {
   pkgdesc="MIME type definitions for WPS Office (prevents system MIME override issues)"
   arch=('any')
@@ -544,6 +501,9 @@ package_wps-office-kr-mime() {
   elif [[ -d "${srcdir}/usr/lib/office6/mui/default" ]]; then
     install -Dm644 -t "${pkgdir}/usr/share/licenses/${pkgname}" "${srcdir}/usr/lib/office6/mui/default/"*.html 2>/dev/null || true
   fi
+  cd "${srcdir}/usr/share"
+  install -d "${pkgdir}/usr/share/mime" 2>/dev/null || true
+  cp -r mime/* "${pkgdir}/usr/share/mime" 2>/dev/null || true
 }
 
 package_wps-office-kr-fonts() {
