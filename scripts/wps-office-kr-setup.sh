@@ -75,12 +75,18 @@ do_system() {
     fi
   fi
 
-  # 3) mui/ko_KR 검증
-  local mui="/opt/kingsoft/wps-office/office6/mui/ko_KR"
-  for f in config/datetimeformat.cfg config/controldatetimeformat.cfg config/idstr.cfg lang.conf; do
-    if [[ -f "$mui/$f" ]]; then ok "mui/ko_KR/$f 존재"; else fail "mui/ko_KR/$f 없음 (패키지 재설치 필요)"; fi
+  # 3) mui/ko_KR 검증 - CN base는 /usr/lib/office6, 365 호환은 /opt (둘 다 체크)
+  local mui=""
+  for cand in "/usr/lib/office6/mui/ko_KR" "/opt/kingsoft/wps-office/office6/mui/ko_KR"; do
+    if [[ -d "$cand" ]]; then mui="$cand"; break; fi
   done
-  if grep -q 'yyyy-MM-dd' "$mui/config/datetimeformat.cfg" 2>/dev/null; then
+  [[ -z "$mui" ]] && mui="/usr/lib/office6/mui/ko_KR"
+  # 호환: /opt가 symlink면 /usr/lib와 동일, 둘 다 체크
+  local mui_alt="/opt/kingsoft/wps-office/office6/mui/ko_KR"
+  for f in config/datetimeformat.cfg config/controldatetimeformat.cfg config/idstr.cfg lang.conf; do
+    if [[ -f "$mui/$f" || -f "$mui_alt/$f" ]]; then ok "mui/ko_KR/$f 존재"; else fail "mui/ko_KR/$f 없음 (패키지 재설치 필요) - $mui/$f 및 $mui_alt/$f 확인"; fi
+  done
+  if grep -q 'yyyy-MM-dd' "$mui/config/datetimeformat.cfg" 2>/dev/null || grep -q 'yyyy-MM-dd' "$mui_alt/config/datetimeformat.cfg" 2>/dev/null; then
     ok "날짜 서식 yyyy-MM-dd 확인"
   else
     fail "날짜 서식 불일치"
@@ -88,10 +94,15 @@ do_system() {
   # .qm 파일 개수
   local qm_cnt
   qm_cnt=$(ls -1 "$mui"/*.qm 2>/dev/null | wc -l)
-  if [[ "$qm_cnt" -ge 3 ]]; then ok "번역 .qm $qm_cnt개 존재 (kso/wps/wpp/et 등)"; else warn ".qm $qm_cnt개 - 일부 번역 누락 가능"; fi
+  [[ "$qm_cnt" -ge 3 ]] || qm_cnt=$(ls -1 "$mui_alt"/*.qm 2>/dev/null | wc -l)
+  if [[ "$qm_cnt" -ge 3 ]]; then ok "번역 .qm $qm_cnt개 존재 (kso/wps/wpp/et 등) - $mui"; else warn ".qm $qm_cnt개 - 일부 번역 누락 가능 ($mui)"; fi
 
-  # 4) setup.cfg
-  local setup="/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"
+  # 4) setup.cfg - CN base는 /usr/lib, 365는 /opt (둘 다 체크)
+  local setup=""
+  for cand in "/usr/lib/office6/cfgs/setup.cfg" "/opt/kingsoft/wps-office/office6/cfgs/setup.cfg"; do
+    if [[ -f "$cand" ]]; then setup="$cand"; break; fi
+  done
+  [[ -z "$setup" ]] && setup="/usr/lib/office6/cfgs/setup.cfg"
   if [[ -f "$setup" ]]; then
     if grep -q "^UILanguage=ko_KR" "$setup"; then ok "setup.cfg UILanguage=ko_KR"; else
       if [[ $CHECK_ONLY -eq 1 ]]; then fail "setup.cfg UILanguage != ko_KR"; else
@@ -104,8 +115,8 @@ do_system() {
     warn "setup.cfg 없음"
   fi
 
-  # 5) Office.conf 시스템 기본값
-  for conf in "/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" "/etc/xdg/Kingsoft/Office.conf"; do
+  # 5) Office.conf 시스템 기본값 - CN base는 /usr/lib, 365 호환은 /opt (둘 다)
+  for conf in "/usr/lib/office6/cfgs/default/Office.conf" "/opt/kingsoft/wps-office/office6/cfgs/default/Office.conf" "/etc/xdg/Kingsoft/Office.conf"; do
     local needs_fix=0
     if [[ ! -f "$conf" ]]; then
       warn "$conf 없음"
