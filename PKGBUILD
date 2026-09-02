@@ -120,6 +120,11 @@ prepare() {
   if [[ -d "${script_src}" ]]; then
     cp -r "${script_src}" "${srcdir}/"
   fi
+  local patch_src="$(dirname "${BASH_SOURCE[0]}")/wps_한글_패치"
+  if [[ -d "${patch_src}" ]]; then
+    cp -r "${patch_src}" "${srcdir}/" 2>/dev/null || true
+    msg "Copied wps_한글_패치 to srcdir for human translation"
+  fi
 }
 
 _install() {
@@ -257,6 +262,31 @@ _build_translations() {
   local mui_dir="${pkgdir}/usr/lib/office6/mui"
   local ko_dir="${mui_dir}/ko_KR"
   mkdir -p "${ko_dir}"
+  # Priority 1: wps_한글_패치 human translation (complete, 729K et.qm) - directly reflects manual patch
+  local wps_patch_dir=""
+  for cand in "${srcdir}/wps_한글_패치/ko_KR" "$(dirname "${BASH_SOURCE[0]}")/wps_한글_패치/ko_KR" "./wps_한글_패치/ko_KR"; do
+    if [[ -d "$cand" ]]; then wps_patch_dir="$cand"; break; fi
+  done
+  if [[ -n "$wps_patch_dir" && -d "$wps_patch_dir" ]]; then
+    msg "Using wps_한글_패치 human translation: $wps_patch_dir"
+    local patch_cnt=0
+    for qm_file in "${wps_patch_dir}"/*.qm; do
+      [[ -f "$qm_file" ]] || continue
+      cp "$qm_file" "${ko_dir}/"
+      msg2 "Installed (wps_한글_패치): $(basename "$qm_file") ($(stat -c '%s' "$qm_file") bytes)"
+      patch_cnt=$((patch_cnt+1))
+    done
+    # Also copy resource/templates/lang.conf from patch if available
+    [[ -f "${wps_patch_dir}/lang.conf" ]] && cp "${wps_patch_dir}/lang.conf" "${ko_dir}/lang.conf" 2>/dev/null || true
+    [[ -f "${wps_patch_dir}/ko_KR.png" ]] && cp "${wps_patch_dir}/ko_KR.png" "${ko_dir}/ko_KR.png" 2>/dev/null || true
+    if [[ "$patch_cnt" -ge 5 ]]; then
+      msg "wps_한글_패치: $patch_cnt qm installed, skipping machine translation"
+      # Also install dict for reference
+      install -Dm644 "${srcdir}/translation_dict.json" "${ko_dir}/translation_dict.json" 2>/dev/null || true
+      # Copy addons ko_KR from patch's resource if any
+      return 0
+    fi
+  fi
   local src_ts_tar="${srcdir}/win_translations.tar.gz"
   local src_ts_dir="${srcdir}/win_translations"
   if [[ -f "${src_ts_tar}" ]]; then
@@ -266,7 +296,7 @@ _build_translations() {
     msg2 "Warning: Source .ts directory not found at ${src_ts_dir}"
     return 0
   fi
-  msg "Running build-time translation pipeline..."
+  msg "Running build-time translation pipeline (fallback)..."
   if [[ -f "${srcdir}/scripts/build_translations.sh" ]]; then
     bash "${srcdir}/scripts/build_translations.sh" "${src_ts_dir}" "${srcdir}/build_qm" "${srcdir}/translation_dict.json" 2>&1 | while IFS= read -r line; do msg2 "$line"; done
   else
