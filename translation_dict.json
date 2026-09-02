@@ -153,5 +153,11 @@
   "Unprotect Book": "통합 문서 보호 해제",
   "Right section": "오른쪽 구역",
   "StdDevp": "표준편차P",
-  "Dark Style 2-Emphasize 5/Emphasize 6": "어두운 스타일 2-강조 5/강조 6"
+  "Dark Style 2-Emphasize 5/Emphasize 6": "어두운 스타일 2-강조 5/강조 6",
+  "CmpSideBySide.content": "두 통합 문서를 나란히 표시하여 내용을 비교합니다.",
+  "SmartTableExtraction.content": "AI로 편집 가능한 표로 추출",
+  "CmpSideBySide.title": "나란히 보기",
+  "SmartTableExtraction.title": "스마트 표 추출",
+  "Enter 0% to 100% of value": "0%에서 100% 사이의 값을 입력하세요",
+  "Enter 1% to 200% of value": "1%에서 200% 사이의 값을 입력하세요"
 }
