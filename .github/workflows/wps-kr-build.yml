@@ -223,14 +223,6 @@ jobs:
             jq \
             curl \
             qt5-tools
-          # Install ArgosTranslate for Korean machine translation (optional, graceful fallback if fails)
-          pip install --break-system-packages --no-cache-dir argostranslate 2>&1 | tail -n 20 || pip install --no-cache-dir argostranslate 2>&1 | tail -n 20 || true
-          sudo -u builder pip install --no-cache-dir --break-system-packages argostranslate 2>&1 | tail -n 20 || true
-          # Pre-download en->ko model (best effort) for both root and builder
-          python3 -c "import argostranslate.package; argostranslate.package.update_package_index(); pkgs=[p for p in argostranslate.package.get_available_packages() if p.from_code=='en' and p.to_code=='ko']; print(f'Available en->ko packages: {len(pkgs)}'); [print(p) for p in pkgs[:2]]; pkgs[0].download() if pkgs else None; print('downloaded') if pkgs else print('no pkg')" 2>&1 | tail -n 20 || true
-          sudo -u builder python3 -c "import argostranslate.package; argostranslate.package.update_package_index(); pkgs=[p for p in argostranslate.package.get_available_packages() if p.from_code=='en' and p.to_code=='ko']; print(f'Builder: Available {len(pkgs)}'); import pathlib; print('builder pkgs', pkgs[0].path if pkgs else 'none'); pkgs[0].download() if pkgs else None; print('builder downloaded')" 2>&1 | tail -n 20 || true
-          python3 -c "import argostranslate.package; pkgs=[p for p in argostranslate.package.get_available_packages() if p.from_code=='en' and p.to_code=='ko']; print('installing model root...' ) if pkgs else print('no model root'); import argostranslate.package as ap; ap.install_from_path(pkgs[0].path) if pkgs and hasattr(pkgs[0],'path') else None; print('root model installed')" 2>&1 | tail -n 20 || echo "Argos model install root skipped"
-          sudo -u builder python3 -c "import argostranslate.package; pkgs=[p for p in argostranslate.package.get_available_packages() if p.from_code=='en' and p.to_code=='ko']; print('installing model builder...' ) if pkgs else print('no model builder'); import argostranslate.package as ap; ap.install_from_path(pkgs[0].path) if pkgs and hasattr(pkgs[0],'path') else None; print('builder model installed')" 2>&1 | tail -n 20 || echo "Argos model install builder skipped"
 
       - name: Checkout repository inside container
         run: |
@@ -243,6 +235,49 @@ jobs:
           useradd -m -G wheel -s /bin/bash builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
           chown -R builder:builder "${GITHUB_WORKSPACE}"
+
+      - name: Install ArgosTranslate model (force)
+        run: |
+          echo "=== Installing ArgosTranslate (force) ==="
+          pip install --break-system-packages --no-cache-dir argostranslate 2>&1 | tail -n 20 || pip install --no-cache-dir argostranslate 2>&1 | tail -n 20 || true
+          sudo -u builder pip install --break-system-packages --no-cache-dir argostranslate 2>&1 | tail -n 20 || sudo -u builder pip install --no-cache-dir argostranslate 2>&1 | tail -n 20 || true
+          echo "--- Downloading en->ko model for root ---"
+          cat > /tmp/install_ko_root.py << 'PYEOF'
+          import argostranslate.package
+          argostranslate.package.update_package_index()
+          pkgs=[p for p in argostranslate.package.get_available_packages() if p.from_code=='en' and p.to_code=='ko']
+          print(f'Root: Available {len(pkgs)}')
+          for p in pkgs[:2]:
+              print(p)
+          if pkgs:
+              pkgs[0].download()
+              print(f'Root downloaded: {pkgs[0].path}')
+              argostranslate.package.install_from_path(pkgs[0].path)
+              print('Root model installed')
+          else:
+              print('Root: no pkg')
+          PYEOF
+          python3 /tmp/install_ko_root.py 2>&1 | tail -n 30 || echo "Root model install failed (non-fatal)"
+          echo "--- Downloading en->ko model for builder ---"
+          cat > /tmp/install_ko_builder.py << 'PYEOF'
+          import argostranslate.package
+          argostranslate.package.update_package_index()
+          pkgs=[p for p in argostranslate.package.get_available_packages() if p.from_code=='en' and p.to_code=='ko']
+          print(f'Builder: Available {len(pkgs)}')
+          for p in pkgs[:2]:
+              print(p)
+          if pkgs:
+              pkgs[0].download()
+              print(f'Builder downloaded: {pkgs[0].path}')
+              argostranslate.package.install_from_path(pkgs[0].path)
+              print('Builder model installed')
+          else:
+              print('Builder: no pkg')
+          PYEOF
+          sudo -u builder python3 /tmp/install_ko_builder.py 2>&1 | tail -n 30 || echo "Builder model install failed (non-fatal)"
+          echo "--- Verifying model ---"
+          python3 -c "import argostranslate.translate; langs=argostranslate.translate.get_installed_languages(); print([l.code for l in langs])" 2>&1 | tail -n 20 || true
+          sudo -u builder python3 -c "import argostranslate.translate; langs=argostranslate.translate.get_installed_languages(); print('Builder:', [l.code for l in langs])" 2>&1 | tail -n 20 || true
 
       - name: Prepare PKGBUILD with new version
         id: prepare_pkgbuild
