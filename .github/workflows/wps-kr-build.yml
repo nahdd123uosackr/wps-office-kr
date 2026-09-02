@@ -250,10 +250,15 @@ jobs:
           for p in pkgs[:2]:
               print(p)
           if pkgs:
-              pkgs[0].download()
-              print(f'Root downloaded: {pkgs[0].path}')
-              argostranslate.package.install_from_path(pkgs[0].path)
-              print('Root model installed')
+              dl_path = pkgs[0].download()
+              # download() may return path or set attribute
+              dl = getattr(pkgs[0], 'path', dl_path) or dl_path or getattr(pkgs[0], 'download_path', None)
+              print(f'Root downloaded: {dl}')
+              if dl:
+                  argostranslate.package.install_from_path(dl)
+                  print('Root model installed')
+              else:
+                  print('Root: download returned no path')
           else:
               print('Root: no pkg')
           PYEOF
@@ -267,10 +272,14 @@ jobs:
           for p in pkgs[:2]:
               print(p)
           if pkgs:
-              pkgs[0].download()
-              print(f'Builder downloaded: {pkgs[0].path}')
-              argostranslate.package.install_from_path(pkgs[0].path)
-              print('Builder model installed')
+              dl_path = pkgs[0].download()
+              dl = getattr(pkgs[0], 'path', dl_path) or dl_path or getattr(pkgs[0], 'download_path', None)
+              print(f'Builder downloaded: {dl}')
+              if dl:
+                  argostranslate.package.install_from_path(dl)
+                  print('Builder model installed')
+              else:
+                  print('Builder: download returned no path')
           else:
               print('Builder: no pkg')
           PYEOF
