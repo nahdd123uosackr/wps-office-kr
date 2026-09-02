@@ -159,5 +159,20 @@
   "CmpSideBySide.title": "나란히 보기",
   "SmartTableExtraction.title": "스마트 표 추출",
   "Enter 0% to 100% of value": "0%에서 100% 사이의 값을 입력하세요",
-  "Enter 1% to 200% of value": "1%에서 200% 사이의 값을 입력하세요"
+  "Enter 1% to 200% of value": "1%에서 200% 사이의 값을 입력하세요",
+  "Loading application": "응용 프로그램 로드 중",
+  "More Colors": "기타 색",
+  "Body": "본문",
+  "Screen Recording": "화면 녹화",
+  "Scanning cache files, found %1": "캐시 파일 스캔 중, %1개 발견",
+  "Switching, Please wait...": "전환 중, 잠시 기다려 주세요...",
+  "Batch Process": "일괄 처리",
+  "Fade Left": "왼쪽으로 페이드",
+  "Go to &Previous": "이전으로 이동(&P)",
+  "Preview": "미리 보기",
+  "Professional": "Professional",
+  "Creation failed.": "Creation failed.",
+  "Check the device network and log in.": "장치 네트워크를 확인하고 로그인하세요.",
+  "Evenly distribute the height of the selected row or the width of the column.": "선택한 행의 높이나 열의 너비를 균등하게 배분합니다.",
+  "Edit Connection Properties": "연결 속성 편집"
 }
