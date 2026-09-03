@@ -135,6 +135,13 @@ jobs:
           # Also ensure wps_한글_패치 is available for PKGBUILD
           ls -lh wps_한글_패치/ko_KR/ 2>&1 | head -n 20
 
+      - name: Install Qt tools for lconvert
+        if: steps.check.outputs.updated == 'true'
+        run: |
+          sudo apt-get update -qq 2>&1 | tail -n 5
+          sudo apt-get install -y -qq qttools5-dev-tools 2>&1 | tail -n 10 || sudo apt-get install -y qtbase5-dev-tools 2>&1 | tail -n 10 || true
+          which lconvert 2>&1 | head; lconvert -version 2>&1 | head || true
+
       - name: Build 한글 번역 테이블 (translation_dict.json) from KLANGKOKR
         if: steps.check.outputs.updated == 'true'
         run: |
