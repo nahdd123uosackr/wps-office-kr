@@ -100,12 +100,42 @@ jobs:
           ls -lh wps_한글_패치/ko_KR/*.qm 2>&1 | head -n 10
           echo "wps_한글_패치 ready for PKGBUILD (fallback human translation)"
 
-      - name: Extract KLANGKOKR and build translation table
+      - name: Extract KLANGKOKR qm to wps_한글_패치
         if: steps.check.outputs.updated == 'true'
         run: |
-          echo "=== Extracting KLANGKOKR and building translation table ==="
-          # Actively reflect apply_wps_kokr_langpack.sh logic: core + addons
-          # For CI, we use wps_한글_패치 as source; for local with Wine, it would be pool
+          echo "=== Extracting KLANGKOKR qm to wps_한글_패치 ==="
+          # 1) Try wine pool (local with Wine) - latest klangkokr_*/ko_KR
+          POOL_SRC=""
+          for base in "$HOME/.wine-wps-kokr" "$HOME/.wine" "$HOME/.wine-wps"; do
+            for p in "$base"/drive_c/users/*/AppData/Roaming/kingsoft/wps_intl/addons/pool/win-x64/klangkokr_*/ko_KR 2>/dev/null; do
+              [[ -d "$p" ]] && POOL_SRC="$p" && break 2
+            done
+          done
+          if [[ -n "$POOL_SRC" && -d "$POOL_SRC" ]]; then
+            echo "Found pool: $POOL_SRC ($(find "$POOL_SRC" -name "*.qm" | wc -l) qm)"
+            mkdir -p wps_한글_패치/ko_KR
+            cp -a "$POOL_SRC"/*.qm wps_한글_패치/ko_KR/ 2>/dev/null || true
+            cp -a "$POOL_SRC"/../*.qm wps_한글_패치/ 2>/dev/null || true
+            cp -a "$POOL_SRC"/lang.conf wps_한글_패치/ko_KR/ 2>/dev/null || true
+            cp -a "$POOL_SRC"/ko_KR.png wps_한글_패치/ko_KR/ 2>/dev/null || true
+            # Also handle addons wps-i18n
+            find "$POOL_SRC/.." -type d -path "*/wps-i18n/ko-kr" 2>/dev/null | while read -r d; do
+              rel="${d#"$POOL_SRC/.."}"
+              mkdir -p "wps_한글_패치/$rel"
+              cp -a "$d"/* "wps_한글_패치/$rel/" 2>/dev/null || true
+            done
+            echo "Pool -> wps_한글_패치 done: $(ls wps_한글_패치/ko_KR/*.qm | wc -l) qm"
+          else
+            echo "No pool found (CI), using committed wps_한글_패치 as source"
+            ls -lh wps_한글_패치/ko_KR/*.qm 2>&1 | head -n 5
+          fi
+          # Also ensure wps_한글_패치 is available for PKGBUILD
+          ls -lh wps_한글_패치/ko_KR/ 2>&1 | head -n 20
+
+      - name: Build 한글 번역 테이블 (translation_dict.json) from KLANGKOKR
+        if: steps.check.outputs.updated == 'true'
+        run: |
+          echo "=== Building 한글 번역 테이블 from KLANGKOKR qm ==="
           python3 << 'PYEOF'
           import subprocess, json, pathlib, tempfile, xml.etree.ElementTree as ET, os
           
