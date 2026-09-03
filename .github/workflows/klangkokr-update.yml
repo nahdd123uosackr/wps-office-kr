@@ -58,30 +58,47 @@ jobs:
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Need update: $NEED_UPDATE"
 
-      - name: Install Wine and extract KLANGKOKR (using install_wps_wine.sh + apply script)
+      - name: Install Wine and extract KLANGKOKR - Arch install_wine_and_extract_kokr.sh
         if: steps.check.outputs.updated == 'true'
         run: |
-          echo "=== Installing Wine and WPS for KLANGKOKR extraction ==="
-          sudo apt-get update -qq 2>&1 | tail -n 5
-          sudo apt-get install -y -qq wine64 xvfb xdotool 7zip 2>&1 | tail -n 20 || sudo apt-get install -y wine xvfb xdotool p7zip-full 2>&1 | tail -n 20 || true
-          wine --version 2>&1 | head
-          # Try to run install_wps_wine.sh if installer exists (for self-hosted, corp's local wine pool)
-          # In GitHub hosted runner, we use existing wps_한글_패치 as source (already human translation)
-          # This step demonstrates the full pipeline: install_wps_wine.sh -> pool -> apply_wps_kokr_langpack.sh
-          if [[ -f "install_wps_wine.sh" ]]; then
-            echo "--- install_wps_wine.sh available (would install WPS in Wine) ---"
-            # For CI, we skip actual Wine install (requires 254M download and GUI), and use wps_한글_패치 directly
-            # Local self-hosted runner would do: bash install_wps_wine.sh
-            echo "CI: Skipping actual Wine install, using committed wps_한글_패치 as source"
+          echo "=== Installing Wine and WPS for KLANGKOKR extraction (Arch base) ==="
+          # Arch: pacman -S wine xorg-server-xvfb xdotool / Debian: apt
+          if command -v pacman >/dev/null 2>&1; then
+            sudo pacman -Syu --noconfirm 2>&1 | tail -n 5
+            sudo pacman -S --noconfirm --needed wine xorg-server-xvfb xdotool p7zip 2>&1 | tail -n 20 || true
+          else
+            sudo apt-get update -qq 2>&1 | tail -n 5
+            sudo apt-get install -y -qq wine64 xvfb xdotool p7zip-full 7zip 2>&1 | tail -n 20 || sudo apt-get install -y wine xvfb xdotool p7zip-full 2>&1 | tail -n 20 || true
+          fi
+          wine --version 2>&1 | head; Xvfb -help 2>&1 | head -n 5 || true; xdotool --version 2>&1 | head || true
+          # Prepare installer: prefer dynamic from wps.com (600.1002) or APKPure offline
+          if [[ ! -f "/home/corp/다운로드/wps_wid.cid-549782062.1783900409.exe" ]]; then
+            echo "--- Preparing Windows installer (dynamic from wps.com) ---"
+            mkdir -p "/home/corp/다운로드" 2>/dev/null || mkdir -p "$HOME/다운로드" 2>/dev/null || true
+            # Use get_wps_windows.sh to download offline (254M) if not in CI cache
+            if [[ -x "scripts/get_wps_windows.sh" ]]; then
+              bash scripts/get_wps_windows.sh /tmp/wps_win.exe 2>&1 | tail -n 20 || true
+              if [[ -f /tmp/wps_win.exe ]]; then
+                mkdir -p "/home/corp/다운로드" 2>/dev/null || true
+                cp -a /tmp/wps_win.exe "/home/corp/다운로드/wps_wid.cid-549782062.1783900409.exe" 2>/dev/null || cp -a /tmp/wps_win.exe "$HOME/다운로드/wps_wid.cid-549782062.1783900409.exe" 2>/dev/null || true
+              fi
+            fi
+          fi
+          ls -lh "/home/corp/다운로드/wps_wid.cid-549782062.1783900409.exe" 2>&1 | head || ls -lh "$HOME/다운로드/wps_wid.cid-549782062.1783900409.exe" 2>&1 | head || echo "Installer not yet in corp path (CI will use wps_한글_패치)"
+          # Run Arch-based extractor: install_wine_and_extract_kokr.sh (Xvfb :77, wineboot, xdotool 308,621 etc)
+          if [[ -x "install_wine_and_extract_kokr.sh" ]]; then
+            echo "--- Running install_wine_and_extract_kokr.sh (Arch: wine + Xvfb + xdotool) ---"
+            # In CI (ubuntu, no display), we run with timeout 120 and allow failure, fallback to wps_한글_패치
+            timeout 300 bash install_wine_and_extract_kokr.sh 2>&1 | tail -n 100 || echo "Wine install timed out or failed (expected in CI without full GUI), fallback to wps_한글_패치"
+            # Check result: WINEPREFIX $HOME/.wine-wps-kokr
+            ls -lh "$HOME/.wine-wps-kokr/drive_c/users/$USER/AppData/Roaming/kingsoft/wps_intl/addons/pool/win-x64/klangkokr_"* 2>&1 | head -n 20 || ls -lh "$HOME/wps_kokr_extracted" 2>&1 | head -n 20 || echo "Pool not yet, using committed wps_한글_패치"
           fi
           if [[ -f "apply_wps_kokr_langpack.sh" ]]; then
-            echo "--- apply_wps_kokr_langpack.sh available (would merge to /usr/lib/office6) ---"
-            # For CI, we simulate by ensuring wps_한글_패치 is used as PKGBUILD does
-            echo "CI: Skipping live apply, PKGBUILD will handle via wps_한글_패치 copy"
+            echo "--- apply_wps_kokr_langpack.sh would merge pool -> /usr/lib/office6 (live system) ---"
+            echo "CI: PKGBUILD handles same via wps_한글_패치 copy to pkgdir/usr/lib/office6/mui/ko_KR"
           fi
-          # Verify wps_한글_패치 exists for build
           ls -lh wps_한글_패치/ko_KR/*.qm 2>&1 | head -n 10
-          echo "wps_한글_패치 ready for PKGBUILD"
+          echo "wps_한글_패치 ready for PKGBUILD (fallback human translation)"
 
       - name: Extract KLANGKOKR and build translation table
         if: steps.check.outputs.updated == 'true'
