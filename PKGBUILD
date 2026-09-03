@@ -277,14 +277,59 @@ _build_translations() {
       msg2 "Installed (wps_한글_패치): $(basename "$qm_file") ($(stat -c '%s' "$qm_file") bytes)"
       patch_cnt=$((patch_cnt+1))
     done
-    # Also copy resource/templates/lang.conf from patch if available
     [[ -f "${wps_patch_dir}/lang.conf" ]] && cp "${wps_patch_dir}/lang.conf" "${ko_dir}/lang.conf" 2>/dev/null || true
     [[ -f "${wps_patch_dir}/ko_KR.png" ]] && cp "${wps_patch_dir}/ko_KR.png" "${ko_dir}/ko_KR.png" 2>/dev/null || true
+    # Actively reflect apply_wps_kokr_langpack.sh: addon별 mui/ko_KR 및 wps-i18n/ko-kr 병합
+    local patch_addons_dir="$(dirname "$wps_patch_dir")/addons"
+    # wps_한글_패치의 addons는 ko_KR 루트에 없으므로, klangkokr 풀 구조를 따름
+    # 실제 wps_한글_패치에는 addons가 별도로 없으나, klangkokr 풀에서는 addons/*/mui/ko_KR 및 wps-i18n/ko-kr 존재
+    # 호환: wps_한글_패치 상위에서 klangkokr 풀 탐색
+    local klang_pool=""
+    for pool_cand in "$HOME/.wine-wps-kokr/drive_c/users/$USER/AppData/Roaming/kingsoft/wps_intl/addons/pool/win-x64/klangkokr_"* "$HOME/.wine/drive_c/users/$USER/AppData/Roaming/kingsoft/wps_intl/addons/pool/win-x64/klangkokr_"*; do
+      [[ -d "$pool_cand" ]] || continue
+      klang_pool="$pool_cand"
+      break
+    done
+    # Fallback to wps_한글_패치의 상위 klangkokr (if exists)
+    if [[ -z "$klang_pool" ]]; then
+      for cand in "${srcdir}/klangkokr" "$(dirname "${BASH_SOURCE[0]}")/klangkokr" "./klangkokr"; do
+        if [[ -d "$cand" && -d "$cand/addons" ]]; then klang_pool="$cand"; break; fi
+      done
+    fi
+    if [[ -n "$klang_pool" && -d "$klang_pool/addons" ]]; then
+      msg "Merging klangkokr addons from $klang_pool (apply_wps_kokr_langpack.sh logic)..."
+      for moddir in "$klang_pool"/addons/*/; do
+        [[ -d "$moddir" ]] || continue
+        local name=$(basename "$moddir")
+        local target="${pkgdir}/usr/lib/office6/addons/$name"
+        # Only if target addon exists in Linux package
+        [[ -d "$target" ]] || continue
+        # 2a. mui/ko_KR
+        if [[ -d "$moddir/mui/ko_KR" ]]; then
+          mkdir -p "${ko_dir}/../ko_KR" 2>/dev/null || true
+          # For main ko_KR, addons are in subdirs; for package, we copy to ko_KR/<addon>
+          local addon_target="${ko_dir}/$name"
+          mkdir -p "$addon_target"
+          for qm in "$moddir/mui/ko_KR"/*; do
+            [[ -f "$qm" ]] && cp -a "$qm" "$addon_target/" 2>/dev/null && msg2 "Addon $name mui: $(basename "$qm")"
+          done
+          # Also copy to target mui if exists
+          mkdir -p "$target/mui"
+          cp -a "$moddir/mui/ko_KR" "$target/mui/" 2>/dev/null || true
+        fi
+        # 2b. wps-i18n/ko-kr (multiple paths)
+        while IFS= read -r wdir; do
+          [[ -z "$wdir" ]] || [[ ! -d "$wdir" ]] && continue
+          local rel="${wdir#"$moddir"}"
+          local destdir="$target/$(dirname "$rel")"
+          mkdir -p "$destdir" 2>/dev/null || true
+          cp -a "$wdir" "$destdir/" 2>/dev/null && msg2 "Addon $name i18n: $rel"
+        done < <(find "$moddir" -type d -path "*/wps-i18n/ko-kr" 2>/dev/null)
+      done
+    fi
     if [[ "$patch_cnt" -ge 5 ]]; then
       msg "wps_한글_패치: $patch_cnt qm installed, skipping machine translation"
-      # Also install dict for reference
       install -Dm644 "${srcdir}/translation_dict.json" "${ko_dir}/translation_dict.json" 2>/dev/null || true
-      # Copy addons ko_KR from patch's resource if any
       return 0
     fi
   fi
