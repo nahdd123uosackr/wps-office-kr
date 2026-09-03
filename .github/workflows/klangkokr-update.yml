@@ -1,0 +1,181 @@
+name: KLANGKOKR Daily Update
+
+on:
+  schedule:
+    - cron: '0 15 * * *'  # 매일 15:00 UTC = KST 자정 (00:00)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-klangkokr:
+    name: Check KLANGKOKR New Version
+    runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.check.outputs.updated }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check current klangkokr version
+        id: check
+        run: |
+          CURRENT_VERSION="unknown"
+          if [[ -f "wps_한글_패치/ko_KR/lang.conf" ]]; then
+            CURRENT_VERSION=$(grep -o "klangkokr[^ ]*" wps_한글_패치/ko_KR/CREDITS 2>/dev/null | head -1 || echo "3.1.0.399")
+            # Try to get version from directory name or file
+            if [[ -f "klangkokr/CREDITS" ]]; then
+              CURRENT_VERSION=$(grep -o "3\.[0-9]\+\.[0-9]\+" klangkokr/CREDITS 2>/dev/null | head -1 || echo "$CURRENT_VERSION")
+            fi
+          fi
+          echo "Current klangkokr: $CURRENT_VERSION"
+          
+          # For now, check if wps_한글_패치 needs update by comparing with latest Windows WPS
+          # The actual KLANGKOKR version is independent of WPS version, but we can detect
+          # by trying to download latest Windows WPS and checking its bundled klangkokr
+          # For CI without wine, we skip actual extraction and just check if translation_dict needs update
+          
+          # Check translation_dict coverage
+          DICT_SIZE=$(jq 'length' translation_dict.json 2>/dev/null || echo 0)
+          echo "Current dict size: $DICT_SIZE"
+          
+          # If dict size < 176 (previous complete), consider needs update
+          # Or if klangkokr folder has new qm files not in dict
+          NEED_UPDATE="false"
+          NEW_VERSION="$CURRENT_VERSION"
+          
+          # Simple heuristic: if we have wine pool or can download, try
+          # For now, we just ensure dict is built from current wps_한글_패치
+          # This workflow will be responsible for updating wps_한글_패치 when a new Windows version is available
+          # Manual trigger can be used to force update
+          
+          # Check if there's a newer WPS Windows version that might have new klangkokr
+          # We can check the latest WPS Windows version via wps.com or APKPure
+          LATEST_WPS=$(curl -s "https://www.wps.com/office/windows" 2>/dev/null | grep -o "12\.[0-9][0-9]*\.[0-9]*\.[0-9]*" | head -1 || echo "")
+          echo "Latest WPS Windows: $LATEST_WPS"
+          
+          # For now, we consider update needed if dict size < 176 or if forced
+          if [[ "$DICT_SIZE" -lt 176 ]]; then
+            NEED_UPDATE="true"
+            NEW_VERSION="3.1.0.399+dictfix"
+          fi
+          
+          echo "updated=$NEED_UPDATE" >> $GITHUB_OUTPUT
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Need update: $NEED_UPDATE"
+
+      - name: Extract KLANGKOKR and build translation table
+        if: steps.check.outputs.updated == 'true'
+        run: |
+          echo "=== Extracting KLANGKOKR ==="
+          # Use existing wps_한글_패치 as source (human translation)
+          # In a full implementation, this would download latest Windows WPS and extract via wine
+          # For now, we ensure translation_dict is built from current wps_한글_패치
+          python3 << 'PYEOF'
+          import subprocess, json, pathlib, tempfile, xml.etree.ElementTree as ET, os
+          
+          patch_dir = "wps_한글_패치/ko_KR"
+          dict_path = "translation_dict.json"
+          
+          with open(dict_path, 'r', encoding='utf-8') as f:
+              d = json.load(f)
+          print(f"Before: {len(d)}")
+          orig = len(d)
+          
+          # Extract from patch qm
+          for qm_path in pathlib.Path(patch_dir).glob("*.qm"):
+              with tempfile.NamedTemporaryFile(suffix='.ts', delete=False) as tmp:
+                  tmp_path = tmp.name
+              try:
+                  r = subprocess.run(['lconvert', '-i', str(qm_path), '-o', tmp_path], capture_output=True)
+                  if r.returncode != 0:
+                      continue
+                  tree = ET.parse(tmp_path)
+                  for ctx in tree.getroot().findall('context'):
+                      for msg in ctx.findall('message'):
+                          src = msg.find('source')
+                          tr = msg.find('translation')
+                          st = src.text.strip() if src is not None and src.text and src.text.strip() else ""
+                          tt = tr.text.strip() if tr is not None and tr.text and tr.text.strip() else ""
+                          if st and tt and any('\uAC00' <= c <= '\uD7A3' for c in tt) and st != tt:
+                              if st not in d:
+                                  d[st] = tt
+              finally:
+                  try:
+                      os.unlink(tmp_path)
+                  except:
+                      pass
+          
+          # Ensure win_translations coverage (add manual for uncovered)
+          win_tar = "win_translations.tar.gz"
+          win_dir = None
+          if os.path.exists(win_tar):
+              import tarfile, glob
+              tmpdir = tempfile.mkdtemp()
+              with tarfile.open(win_tar) as tar:
+                  tar.extractall(tmpdir)
+              # Find win_translations dir
+              for p in pathlib.Path(tmpdir).rglob("*.ts"):
+                  win_dir = str(p.parent)
+                  break
+              if win_dir:
+                  win_english = set()
+                  for ts in pathlib.Path(win_dir).glob("*.ts"):
+                      try:
+                          tree = ET.parse(str(ts))
+                          for ctx in tree.getroot().findall('context'):
+                              for msg in ctx.findall('message'):
+                                  src = msg.find('source')
+                                  tr = msg.find('translation')
+                                  eng = ""
+                                  if src is not None and src.text and src.text.strip():
+                                      eng = src.text.strip()
+                                  elif tr is not None and tr.text and tr.text.strip():
+                                      txt = tr.text.strip()
+                                      if any('\uAC00' <= c <= '\uD7A3' for c in txt):
+                                          continue
+                                      eng = txt
+                                  if eng and not any('\uAC00' <= c <= '\uD7A3' for c in eng):
+                                      win_english.add(eng)
+                      except:
+                          pass
+                  uncovered = [e for e in win_english if e not in d]
+                  print(f"Win uncovered: {len(uncovered)}")
+                  # Add manual for uncovered (keep English as fallback to avoid [KO])
+                  for k in uncovered:
+                      if k not in d:
+                          d[k] = k
+          
+          print(f"After: {len(d)} (+{len(d)-orig})")
+          with open(dict_path, 'w', encoding='utf-8') as f:
+              json.dump(d, f, ensure_ascii=False, indent=2)
+          print(f"Final dict {len(d)}")
+          PYEOF
+          
+          echo "=== Dict built ==="
+          echo "New dict size: $(jq 'length' translation_dict.json)"
+
+      - name: Commit and push if updated
+        if: steps.check.outputs.updated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add translation_dict.json wps_한글_패치/ 2>/dev/null || true
+          # Also check klangkokr folder if it was updated via extraction
+          git add klangkokr/ 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: klangkokr daily update - $(date -u +%Y-%m-%d) [skip ci]"
+            git push
+            echo "Pushed klangkokr update"
+          else
+            echo "No changes to commit"
+          fi

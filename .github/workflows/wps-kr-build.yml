@@ -2,7 +2,12 @@ name: WPS Office KR Build & Release
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # 매일 새벽 2시 (KST 11시) 버전 체크
+    - cron: '0 19 * * *'  # 매일 새벽 4시 KST (19:00 UTC) - klangkokr 자정 업데이트 이후
+  push:
+    paths:
+      - 'translation_dict.json'
+      - 'wps_한글_패치/**'
+      - 'klangkokr/**'
   workflow_dispatch:
     inputs:
       force_build:
@@ -33,6 +38,7 @@ jobs:
       sha256: ${{ steps.get_version.outputs.sha256 }}
       changed: ${{ steps.get_version.outputs.changed }}
       deb_url: ${{ steps.get_version.outputs.deb_url }}
+      translation_updated: ${{ steps.check_translation.outputs.updated }}
     env:
       FORCE_BUILD: ${{ github.event.inputs.force_build }}
       FORCE_VERSION: ${{ github.event.inputs.version }}
@@ -177,10 +183,35 @@ jobs:
           
           python3 /tmp/get_version.py
 
+      - name: Check translation update
+        id: check_translation
+        run: |
+          # Check if translation dict or wps_한글_패치 changed in last 24h or since last tag
+          echo "Checking translation update..."
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [[ -n "$LAST_TAG" ]]; then
+            CHANGED_FILES=$(git diff --name-only "$LAST_TAG"..HEAD 2>/dev/null | grep -E "translation_dict|wps_한글_패치|klangkokr" | head -n 20 || true)
+            echo "Changed files since $LAST_TAG: $CHANGED_FILES"
+            if [[ -n "$CHANGED_FILES" ]]; then
+              echo "updated=true" >> $GITHUB_OUTPUT
+              echo "Translation updated since last tag"
+              exit 0
+            fi
+          fi
+          # Also check recent commits (last 24h) for translation changes
+          RECENT=$(git log --since="24 hours ago" --name-only --pretty=format: 2>/dev/null | grep -E "translation_dict|wps_한글_패치|klangkokr" | head -n 5 || true)
+          if [[ -n "$RECENT" ]]; then
+            echo "Recent translation changes: $RECENT"
+            echo "updated=true" >> $GITHUB_OUTPUT
+          else
+            echo "updated=false" >> $GITHUB_OUTPUT
+            echo "No recent translation update"
+          fi
+
   build:
     name: Build Package
     needs: check-version
-    if: needs.check-version.outputs.changed == 'true'
+    if: needs.check-version.outputs.changed == 'true' || needs.check-version.outputs.translation_updated == 'true'
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
@@ -429,7 +460,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: [check-version, build]
-    if: needs.check-version.outputs.changed == 'true' && needs.build.result == 'success'
+    if: (needs.check-version.outputs.changed == 'true' || needs.check-version.outputs.translation_updated == 'true') && needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

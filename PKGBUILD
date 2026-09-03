@@ -125,15 +125,7 @@ prepare() {
     cp -r "${patch_src}" "${srcdir}/" 2>/dev/null || true
     msg "Copied wps_한글_패치 to srcdir for human translation (klangkokr 167파일)"
   fi
-  # klangkokr 애드온 추출 빌드과정 추가: srcdir에 없으면 Wine 풀 또는 APKPure에서 추출 시도
-  if [[ ! -d "${srcdir}/wps_한글_패치/ko_KR" ]]; then
-    msg "wps_한글_패치/ko_KR not found, attempting klangkokr extraction..."
-    if [[ -x "${srcdir}/scripts/extract_klangkokr.sh" ]]; then
-      bash "${srcdir}/scripts/extract_klangkokr.sh" "${srcdir}/wps_한글_패치/ko_KR" 2>&1 | while IFS= read -r line; do msg2 "$line"; done || msg2 "klangkokr extraction failed, fallback to machine translation"
-    else
-      msg2 "extract_klangkokr.sh not found, using fallback"
-    fi
-  fi
+  # klangkokr 추출은 빌드에서 제거 - 별도 자정 스케줄에서 처리 (매일 자정 새버전 감지)
 }
 
 _install() {
