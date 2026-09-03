@@ -32,3 +32,10 @@ check_fontconfig/
 *.cache
 __pycache__/
 .pytest_cache/
+ko_qm_windows/
+win_translations/
+win_ko_qm/
+translations/
+win_qm_extract/
+onlyoffice_extract/
+klangkokr/
