@@ -102,15 +102,18 @@ jobs:
 
       - name: Extract KLANGKOKR qm to wps_한글_패치
         if: steps.check.outputs.updated == 'true'
+        shell: bash
         run: |
           echo "=== Extracting KLANGKOKR qm to wps_한글_패치 ==="
+          shopt -s nullglob
           # 1) Try wine pool (local with Wine) - latest klangkokr_*/ko_KR
           POOL_SRC=""
           for base in "$HOME/.wine-wps-kokr" "$HOME/.wine" "$HOME/.wine-wps"; do
-            for p in "$base"/drive_c/users/*/AppData/Roaming/kingsoft/wps_intl/addons/pool/win-x64/klangkokr_*/ko_KR 2>/dev/null; do
+            for p in "$base"/drive_c/users/*/AppData/Roaming/kingsoft/wps_intl/addons/pool/win-x64/klangkokr_*/ko_KR; do
               [[ -d "$p" ]] && POOL_SRC="$p" && break 2
             done
           done
+          shopt -u nullglob
           if [[ -n "$POOL_SRC" && -d "$POOL_SRC" ]]; then
             echo "Found pool: $POOL_SRC ($(find "$POOL_SRC" -name "*.qm" | wc -l) qm)"
             mkdir -p wps_한글_패치/ko_KR
