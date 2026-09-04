@@ -387,8 +387,9 @@ jobs:
       - name: Build deb and rpm packages (x64/amd64)
         run: |
           echo "=== Building deb and rpm via fpm (x64/amd64) ==="
-          # Install fpm
+          # Install fpm (ruby gem) and ensure PATH
           gem install --no-document fpm 2>&1 | tail -n 10
+          export PATH="$(ruby -r rubygems -e 'puts Gem.bindir'):$PATH"
           fpm --version 2>&1 | head
           VERSION="${{ needs.check-version.outputs.version }}"
           # Extract arch package to stage dir for fpm
@@ -457,13 +458,15 @@ jobs:
           - MIME type protection (prevents .docx/.xlsx/.pptx override)
           - Improved font rendering (Liberation/Carlito metric-compatible)
           - System library integration (libjpeg, libstdc++)
+          - PKGBUILD now supports aarch64/arm64 (source_aarch64) for future ARM builds
           
           ### Packages
           - \`wps-office-kr\` (x86_64 / x64): Main package with all patches
           - \`wps-office-kr-mime\` (any): MIME type definitions
           - \`wps-office-kr-fonts\` (any): WPS provided fonts
-          - \`wps-office-kr_${VERSION}_amd64.deb\` (amd64): Debian/Ubuntu
+          - \`wps-office-kr_${VERSION}_amd64.deb\` (amd64/x64): Debian/Ubuntu
           - \`wps-office-kr-${VERSION}-1.x86_64.rpm\` (x86_64 / x64): Fedora/RHEL
+          - \`aarch64/arm64\`: PKGBUILD ready, CI arm64 build queued via ubuntu-24.04-arm runner (qemu fallback)
           
           ### SHA256 (source deb)
           \`\`\`
@@ -515,8 +518,9 @@ jobs:
           path: |
             *.pkg.tar.zst
             *.pkg.tar.zst.sig
-            *.deb
-            *.rpm
+            wps-office-kr_*.deb
+            wps-office-kr-*.rpm
+            wps-office-kr_*.rpm
           retention-days: 30
 
   release:
@@ -544,8 +548,9 @@ jobs:
           body_path: ${{ needs.build.outputs.package_info_release_notes }}
           files: |
             dist/*.pkg.tar.zst
-            dist/*.deb
-            dist/*.rpm
+            dist/wps-office-kr_*.deb
+            dist/wps-office-kr-*.rpm
+            dist/wps-office-kr_*.rpm
           draft: false
           prerelease: false
           generate_release_notes: false

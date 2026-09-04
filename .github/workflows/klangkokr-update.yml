@@ -139,12 +139,25 @@ jobs:
         if: steps.check.outputs.updated == 'true'
         run: |
           sudo apt-get update -qq 2>&1 | tail -n 5
-          sudo apt-get install -y -qq qttools5-dev-tools 2>&1 | tail -n 10 || sudo apt-get install -y qtbase5-dev-tools 2>&1 | tail -n 10 || true
+          sudo apt-get install -y -qq qttools5-dev-tools qtbase5-dev-tools 2>&1 | tail -n 20 || true
+          sudo apt-get install -y -qq qt6-tools-dev qt6-tools-dev-tools 2>&1 | tail -n 10 || true
           which lconvert 2>&1 | head; lconvert -version 2>&1 | head || true
+          which lconvert-qt5 2>&1 | head; lconvert-qt5 -version 2>&1 | head || true
+          # fallback symlink if only qt6 variant exists
+          if ! command -v lconvert >/dev/null 2>&1 && command -v lconvert-qt5 >/dev/null 2>&1; then sudo ln -sf $(which lconvert-qt5) /usr/bin/lconvert 2>/dev/null || true; fi
 
       - name: Build 한글 번역 테이블 (translation_dict.json) from KLANGKOKR
         if: steps.check.outputs.updated == 'true'
         run: |
+          # ensure lconvert present even if previous step skipped/failed
+          if ! command -v lconvert >/dev/null 2>&1; then
+            echo "lconvert not found, installing now..."
+            sudo apt-get update -qq 2>&1 | tail -n 5
+            sudo apt-get install -y -qq qttools5-dev-tools qtbase5-dev-tools 2>&1 | tail -n 20 || true
+            sudo apt-get install -y -qq qt6-tools-dev qt6-tools-dev-tools 2>&1 | tail -n 10 || true
+            if ! command -v lconvert >/dev/null 2>&1 && command -v lconvert-qt5 >/dev/null 2>&1; then sudo ln -sf $(which lconvert-qt5) /usr/bin/lconvert 2>/dev/null || true; fi
+          fi
+          which lconvert 2>&1 | head; lconvert -version 2>&1 | head || echo "lconvert still missing"
           echo "=== Building 한글 번역 테이블 from KLANGKOKR qm ==="
           python3 << 'PYEOF'
           import subprocess, json, pathlib, tempfile, xml.etree.ElementTree as ET, os
