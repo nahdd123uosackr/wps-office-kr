@@ -253,7 +253,9 @@ jobs:
             python-pip \
             jq \
             curl \
-            qt5-tools
+            qt5-tools \
+            ruby \
+            rpm-tools
 
       - name: Checkout repository inside container
         run: |
@@ -382,14 +384,57 @@ jobs:
             makepkg -s --noconfirm 2>&1 | tee build.log
           "
 
+      - name: Build deb and rpm packages (x64/amd64)
+        run: |
+          echo "=== Building deb and rpm via fpm (x64/amd64) ==="
+          # Install fpm
+          gem install --no-document fpm 2>&1 | tail -n 10
+          fpm --version 2>&1 | head
+          VERSION="${{ needs.check-version.outputs.version }}"
+          # Extract arch package to stage dir for fpm
+          mkdir -p /tmp/fpm_stage
+          # Use the main package's pkg.tar.zst as source
+          MAIN_PKG=$(ls wps-office-kr-${VERSION}-1-x86_64.pkg.tar.zst 2>/dev/null | head -1)
+          if [[ -f "$MAIN_PKG" ]]; then
+            echo "Using $MAIN_PKG as source for deb/rpm"
+            tar -xf "$MAIN_PKG" -C /tmp/fpm_stage 2>&1 | head -n 20 || bsdtar -xf "$MAIN_PKG" -C /tmp/fpm_stage 2>&1 | head -n 20 || true
+            ls -lh /tmp/fpm_stage/usr/lib/office6/mui/ko_KR 2>&1 | head -n 20 || true
+            # Build deb (amd64)
+            fpm -s dir -t deb -n wps-office-kr -v "${VERSION}" --architecture amd64 \
+              --description "WPS Office with Korean locale (CN base, /usr/lib/office6) - deb" \
+              --url "https://github.com/${{ github.repository }}" --maintainer "WPS Office KR" \
+              --depends fontconfig --depends libxrender --depends xdg-utils \
+              -C /tmp/fpm_stage usr/lib usr/bin usr/share etc 2>&1 | tail -n 20 || echo "fpm deb failed"
+            # Build rpm (x86_64 / x64)
+            fpm -s dir -t rpm -n wps-office-kr -v "${VERSION}" --architecture x86_64 \
+              --description "WPS Office with Korean locale (CN base) - rpm" \
+              --url "https://github.com/${{ github.repository }}" --maintainer "WPS Office KR" \
+              --depends fontconfig --depends libXrender \
+              -C /tmp/fpm_stage usr/lib usr/bin usr/share etc 2>&1 | tail -n 20 || echo "fpm rpm failed"
+            ls -lh *.deb *.rpm 2>&1 | head -n 20
+          else
+            echo "Main Arch package not found, skipping deb/rpm"
+          fi
+
       - name: Verify packages
         run: |
-          ls -la *.pkg.tar.zst
+          ls -lh *.pkg.tar.zst *.deb *.rpm 2>&1 | head -n 30
           
           # Check package contents
           for pkg in *.pkg.tar.zst; do
             echo "=== $pkg ==="
             tar -tf "$pkg" | head -20
+          done
+          for pkg in *.deb; do
+            [[ -f "$pkg" ]] || continue
+            echo "=== $pkg (deb) ==="
+            ar t "$pkg" 2>&1 | head -n 10
+            dpkg -c "$pkg" 2>&1 | head -n 20 || tar -tf "$pkg" 2>&1 | head -n 20
+          done
+          for pkg in *.rpm; do
+            [[ -f "$pkg" ]] || continue
+            echo "=== $pkg (rpm) ==="
+            rpm -qip "$pkg" 2>&1 | head -n 20 || tar -tf "$pkg" 2>&1 | head -n 20
           done
 
       - name: Generate package info
@@ -414,16 +459,18 @@ jobs:
           - System library integration (libjpeg, libstdc++)
           
           ### Packages
-          - \`wps-office-kr\`: Main package with all patches
-          - \`wps-office-kr-mime\`: MIME type definitions
-          - \`wps-office-kr-fonts\`: WPS provided fonts
+          - \`wps-office-kr\` (x86_64 / x64): Main package with all patches
+          - \`wps-office-kr-mime\` (any): MIME type definitions
+          - \`wps-office-kr-fonts\` (any): WPS provided fonts
+          - \`wps-office-kr_${VERSION}_amd64.deb\` (amd64): Debian/Ubuntu
+          - \`wps-office-kr-${VERSION}-1.x86_64.rpm\` (x86_64 / x64): Fedora/RHEL
           
           ### SHA256 (source deb)
           \`\`\`
           ${SHA256}
           \`\`\`
           
-          ### Installation (Arch Linux)
+          ### Installation (Arch Linux - x86_64 / x64)
           \`\`\`bash
           # Using pacman (after adding to local repo)
           sudo pacman -U wps-office-kr-${VERSION}-1-x86_64.pkg.tar.zst
@@ -434,6 +481,19 @@ jobs:
           git clone https://github.com/${{ github.repository }}.git
           cd wps-office-kr
           makepkg -si
+          \`\`\`
+          
+          ### Installation (Debian/Ubuntu - amd64)
+          \`\`\`bash
+          sudo dpkg -i wps-office-kr_${VERSION}_amd64.deb
+          sudo apt-get install -f
+          \`\`\`
+          
+          ### Installation (Fedora/RHEL - x86_64 / x64)
+          \`\`\`bash
+          sudo rpm -i wps-office-kr-${VERSION}-1.x86_64.rpm
+          # or
+          sudo dnf install wps-office-kr-${VERSION}-1.x86_64.rpm
           \`\`\`
           
           ### Configuration
@@ -455,6 +515,8 @@ jobs:
           path: |
             *.pkg.tar.zst
             *.pkg.tar.zst.sig
+            *.deb
+            *.rpm
           retention-days: 30
 
   release:
@@ -482,6 +544,8 @@ jobs:
           body_path: ${{ needs.build.outputs.package_info_release_notes }}
           files: |
             dist/*.pkg.tar.zst
+            dist/*.deb
+            dist/*.rpm
           draft: false
           prerelease: false
           generate_release_notes: false
