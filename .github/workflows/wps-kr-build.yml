@@ -255,6 +255,8 @@ jobs:
             curl \
             qt5-tools \
             ruby \
+            ruby-erb \
+            ruby-rdoc \
             rpm-tools
 
       - name: Checkout repository inside container
