@@ -387,10 +387,16 @@ jobs:
       - name: Build deb and rpm packages (x64/amd64)
         run: |
           echo "=== Building deb and rpm via fpm (x64/amd64) ==="
-          # Install fpm (ruby gem) and ensure PATH
+          # Install fpm (ruby gem) and ensure PATH - arch container gem bindir varies
           gem install --no-document fpm 2>&1 | tail -n 10
-          export PATH="$(ruby -r rubygems -e 'puts Gem.bindir'):$PATH"
-          fpm --version 2>&1 | head
+          GEM_BIN="$(ruby -r rubygems -e 'puts Gem.bindir' 2>/dev/null || echo /usr/local/bin)"
+          echo "GEM_BIN=$GEM_BIN"
+          export PATH="$GEM_BIN:$PATH"
+          ls -l "$GEM_BIN/fpm" 2>&1 | head; ls -l /usr/local/bin/fpm 2>&1 | head; which fpm 2>&1 | head || true
+          "$GEM_BIN/fpm" --version 2>&1 | head || fpm --version 2>&1 | head
+          FPM_BIN="$GEM_BIN/fpm"
+          if [[ ! -x "$FPM_BIN" ]]; then FPM_BIN="$(which fpm 2>/dev/null || echo fpm)"; fi
+          echo "FPM_BIN=$FPM_BIN"
           VERSION="${{ needs.check-version.outputs.version }}"
           # Extract arch package to stage dir for fpm
           mkdir -p /tmp/fpm_stage
@@ -401,13 +407,13 @@ jobs:
             tar -xf "$MAIN_PKG" -C /tmp/fpm_stage 2>&1 | head -n 20 || bsdtar -xf "$MAIN_PKG" -C /tmp/fpm_stage 2>&1 | head -n 20 || true
             ls -lh /tmp/fpm_stage/usr/lib/office6/mui/ko_KR 2>&1 | head -n 20 || true
             # Build deb (amd64)
-            fpm -s dir -t deb -n wps-office-kr -v "${VERSION}" --architecture amd64 \
+            "$FPM_BIN" -s dir -t deb -n wps-office-kr -v "${VERSION}" --architecture amd64 \
               --description "WPS Office with Korean locale (CN base, /usr/lib/office6) - deb" \
               --url "https://github.com/${{ github.repository }}" --maintainer "WPS Office KR" \
               --depends fontconfig --depends libxrender --depends xdg-utils \
               -C /tmp/fpm_stage usr/lib usr/bin usr/share etc 2>&1 | tail -n 20 || echo "fpm deb failed"
             # Build rpm (x86_64 / x64)
-            fpm -s dir -t rpm -n wps-office-kr -v "${VERSION}" --architecture x86_64 \
+            "$FPM_BIN" -s dir -t rpm -n wps-office-kr -v "${VERSION}" --architecture x86_64 \
               --description "WPS Office with Korean locale (CN base) - rpm" \
               --url "https://github.com/${{ github.repository }}" --maintainer "WPS Office KR" \
               --depends fontconfig --depends libXrender \
