@@ -211,7 +211,7 @@ jobs:
   build:
     name: Build Package
     needs: check-version
-    if: needs.check-version.outputs.changed == 'true' || needs.check-version.outputs.translation_updated == 'true'
+    if: needs.check-version.outputs.changed == 'true' || (github.event_name != 'schedule' && needs.check-version.outputs.translation_updated == 'true')
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
@@ -544,7 +544,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: [check-version, build]
-    if: (needs.check-version.outputs.changed == 'true' || needs.check-version.outputs.translation_updated == 'true') && needs.build.result == 'success'
+    if: (needs.check-version.outputs.changed == 'true' || (github.event_name != 'schedule' && needs.check-version.outputs.translation_updated == 'true')) && needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
