@@ -161,8 +161,23 @@ jobs:
           else:
               print("No version change detected")
 
-          # Construct deb URL
-          deb_url = f"https://pubwps-wps365-obs.wpscdn.cn/download/Linux/{latest_build}/wps-office_{latest_version}.AK.preread.sw.365_765469_amd64.deb"
+          # Construct fallback 365 deb URL
+          deb_base_url = f"https://pubwps-wps365-obs.wpscdn.cn/download/Linux/{latest_build}"
+          deb_url = f"{deb_base_url}/wps-office_{latest_version}.AK.preread.sw.365_765469_amd64.deb"
+          try:
+              response = requests.get(f"{deb_base_url}/", timeout=15)
+              response.raise_for_status()
+              match = re.search(
+                  rf"(wps-office_{re.escape(latest_version)}\.AK\.preread\.sw\.365_\d+_amd64\.deb)",
+                  response.text
+              )
+              if match:
+                  deb_url = f"{deb_base_url}/{match.group(1)}"
+                  print(f"Resolved fallback 365 package: {deb_url}")
+              else:
+                  print(f"Could not resolve exact fallback 365 package for {latest_version}, keeping default pattern")
+          except Exception as e:
+              print(f"Fallback 365 URL discovery failed: {e}")
           
           # Try to get SHA256 (optional, we'll compute during build)
           sha256 = "SKIP"
@@ -354,11 +369,11 @@ jobs:
           DEB_FILE="wps-office_${VERSION}_amd64.deb"
           
           echo "Downloading: $DEB_URL"
-          wget -q --show-progress "$DEB_URL" -O "$DEB_FILE" || {
+          wget -q --show-progress --tries=3 --timeout=30 --waitretry=5 --retry-connrefused "$DEB_URL" -O "$DEB_FILE" || {
             echo "CN download failed, trying fallback 365 URL: ${{ needs.check-version.outputs.deb_url }}"
             DEB_URL="${{ needs.check-version.outputs.deb_url }}"
             DEB_FILE=$(basename "$DEB_URL" | cut -d'?' -f1)
-            wget -q --show-progress "$DEB_URL" -O "$DEB_FILE"
+            wget -q --show-progress --tries=3 --timeout=30 --waitretry=5 --retry-connrefused "$DEB_URL" -O "$DEB_FILE"
           }
           
           # Compute SHA256
