@@ -77,89 +77,60 @@ jobs:
           current_version = current_version.group(1) if current_version else '0'
           print(f"Current PKGBUILD version: {current_version}")
 
-          # Try multiple sources for latest version (ordered by reliability)
+          aur_version = None
           latest_version = None
           latest_build = None
-          
-          # Source 1: linux.wps.cn (official Chinese site)
-          try:
-              print("Trying linux.wps.cn...")
-              response = requests.get("https://linux.wps.cn/", timeout=15)
-              versions = re.findall(r'12\.1\.\d+\.\d+', response.text)
-              if versions:
-                  latest_version = versions[0]
-                  latest_build = latest_version.split('.')[-1]
-                  print(f"Found version from linux.wps.cn: {latest_version}")
-          except Exception as e:
-              print(f"linux.wps.cn failed: {e}")
-
-          # Source 2: AUR wps-office-cn
-          if not latest_version:
-              try:
-                  print("Trying AUR wps-office-cn...")
-                  response = requests.get(
-                      'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-cn',
-                      timeout=15
-                  )
-                  match = re.search(r'pkgver=([\d.]+)', response.text)
-                  if match:
-                      latest_version = match.group(1)
-                      latest_build = latest_version.split('.')[-1]
-                      print(f"Found version from AUR wps-office-cn: {latest_version}")
-              except Exception as e:
-                  print(f"AUR wps-office-cn failed: {e}")
-
-          # Source 3: AUR wps-office-365
-          if not latest_version:
-              try:
-                  print("Trying AUR wps-office-365...")
-                  response = requests.get(
-                      'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-365',
-                      timeout=15
-                  )
-                  match = re.search(r'pkgver=([\d.]+)', response.text)
-                  if match:
-                      latest_version = match.group(1)
-                      latest_build = latest_version.split('.')[-1]
-                      print(f"Found version from AUR wps-office-365: {latest_version}")
-              except Exception as e:
-                  print(f"AUR wps-office-365 failed: {e}")
-
-          # Source 4: www.wps.com/office/linux/
-          if not latest_version:
-              try:
-                  print("Trying www.wps.com...")
-                  response = requests.get("https://www.wps.com/office/linux/", timeout=15)
-                  versions = re.findall(r'12\.1\.\d+\.\d+', response.text)
-                  if versions:
-                      latest_version = versions[0]
-                      latest_build = latest_version.split('.')[-1]
-                      print(f"Found version from www.wps.com: {latest_version}")
-              except Exception as e:
-                  print(f"www.wps.com failed: {e}")
-
-          # If all sources failed
-          if not latest_version:
-              print("All version sources failed!")
-              if os.environ.get('FORCE_VERSION'):
-                  latest_version = os.environ['FORCE_VERSION']
-                  latest_build = latest_version.split('.')[-1]
-                  print(f"Using FORCE_VERSION: {latest_version}")
-              else:
-                  latest_version = current_version
-                  latest_build = current_version.split('.')[-1]
-                  print(f"No version change detected, keeping current: {latest_version}")
-
-          print(f"Final determined version: {latest_version} (build: {latest_build})")
-
-          # Check if version changed
+          event_name = os.environ.get('GITHUB_EVENT_NAME', '')
           force_build = os.environ.get('FORCE_BUILD', 'false').lower() == 'true'
-          changed = latest_version != current_version or force_build
-          
-          if changed:
-              print(f"Version changed: {current_version} -> {latest_version}")
+          force_version = (os.environ.get('FORCE_VERSION') or '').strip()
+          is_manual_dispatch = event_name == 'workflow_dispatch'
+
+          print(f"Workflow event: {event_name}")
+          print(f"Force build input: {force_build}")
+          print(f"Force version input: {force_version if force_version else '(none)'}")
+
+          if force_version and not re.fullmatch(r'\d+(?:\.\d+)+', force_version):
+              raise SystemExit(f"ERROR: Invalid FORCE_VERSION format: {force_version}")
+
+          if force_version:
+              latest_version = force_version
+              print(f"Using explicit workflow_dispatch version: {latest_version}")
           else:
-              print("No version change detected")
+              aur_url = 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-cn'
+              try:
+                  print(f"Fetching authoritative version from AUR: {aur_url}")
+                  response = requests.get(aur_url, timeout=20)
+                  response.raise_for_status()
+                  match = re.search(r'^\s*pkgver=([0-9][0-9.]*)\s*$', response.text, re.MULTILINE)
+                  if not match:
+                      raise RuntimeError("pkgver not found in AUR PKGBUILD")
+                  aur_version = match.group(1)
+                  latest_version = aur_version
+                  print(f"AUR wps-office-cn pkgver: {aur_version}")
+              except Exception as e:
+                  print(f"ERROR: Failed to fetch/parse AUR wps-office-cn pkgver: {e}")
+                  if is_manual_dispatch and force_build:
+                      latest_version = current_version
+                      print("Manual force build requested; continuing with current PKGBUILD version")
+                  else:
+                      raise SystemExit("Version check failed: cannot determine authoritative AUR pkgver")
+
+          latest_build = latest_version.split('.')[-1]
+          print(f"Repository PKGBUILD version: {current_version}")
+          print(f"AUR authoritative version: {aur_version if aur_version else '(not fetched; manual override)'}")
+          print(f"Selected build version: {latest_version} (build: {latest_build})")
+
+          version_changed = latest_version != current_version
+          changed = version_changed or force_build or bool(force_version)
+          if version_changed:
+              decision_reason = f"AUR/manual version differs ({current_version} -> {latest_version})"
+          elif force_build:
+              decision_reason = "workflow_dispatch force_build=true"
+          elif force_version:
+              decision_reason = "workflow_dispatch explicit version requested"
+          else:
+              decision_reason = "AUR version matches repository version"
+          print(f"Build decision: changed={str(changed).lower()} ({decision_reason})")
 
           # Construct deb URL
           deb_url = f"https://pubwps-wps365-obs.wpscdn.cn/download/Linux/{latest_build}/wps-office_{latest_version}.AK.preread.sw.365_765469_amd64.deb"
