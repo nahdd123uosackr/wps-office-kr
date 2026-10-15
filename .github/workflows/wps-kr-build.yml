@@ -65,9 +65,12 @@ jobs:
           cat > /tmp/get_version.py << 'PYEOF'
           import requests
           import re
-          import json
           import os
           import subprocess
+          import tempfile
+          from urllib.parse import urlsplit, urlunsplit
+
+          AUR_PKGBUILD_URL = "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-cn"
 
           # Get current version from PKGBUILD
           with open('PKGBUILD', 'r') as f:
@@ -77,83 +80,138 @@ jobs:
           current_version = current_version.group(1) if current_version else '0'
           print(f"Current PKGBUILD version: {current_version}")
 
-          # Try multiple sources for latest version (ordered by reliability)
+          # Determine manual override eligibility
+          event_name = os.environ.get('GITHUB_EVENT_NAME', '').strip()
+          force_build = os.environ.get('FORCE_BUILD', 'false').lower() == 'true'
+          force_version = os.environ.get('FORCE_VERSION', '').strip()
+          manual_override_allowed = event_name == 'workflow_dispatch' and force_build and bool(force_version)
+          print(f"Manual override eligible: {manual_override_allowed} (event={event_name}, force_build={force_build}, force_version_set={bool(force_version)})")
+
+          def redact_url(url: str) -> str:
+              parts = urlsplit(url)
+              redacted_query = '<redacted>' if parts.query else ''
+              return urlunsplit((parts.scheme, parts.netloc, parts.path, redacted_query, ''))
+
+          # Authoritative AUR source only
           latest_version = None
           latest_build = None
-          
-          # Source 1: linux.wps.cn (official Chinese site)
+          deb_url = ""
+          resolution_method = ""
+          aur_error = None
+
+          print(f"Authoritative AUR PKGBUILD URL: {AUR_PKGBUILD_URL}")
+          aur_pkgbuild_text = None
           try:
-              print("Trying linux.wps.cn...")
-              response = requests.get("https://linux.wps.cn/", timeout=15)
-              versions = re.findall(r'12\.1\.\d+\.\d+', response.text)
-              if versions:
-                  latest_version = versions[0]
-                  latest_build = latest_version.split('.')[-1]
-                  print(f"Found version from linux.wps.cn: {latest_version}")
+              response = requests.get(AUR_PKGBUILD_URL, timeout=20)
+              response.raise_for_status()
+              aur_pkgbuild_text = response.text
           except Exception as e:
-              print(f"linux.wps.cn failed: {e}")
+              aur_error = f"AUR PKGBUILD retrieval failed: {e}"
 
-          # Source 2: AUR wps-office-cn
-          if not latest_version:
-              try:
-                  print("Trying AUR wps-office-cn...")
-                  response = requests.get(
-                      'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-cn',
-                      timeout=15
-                  )
-                  match = re.search(r'pkgver=([\d.]+)', response.text)
-                  if match:
-                      latest_version = match.group(1)
-                      latest_build = latest_version.split('.')[-1]
-                      print(f"Found version from AUR wps-office-cn: {latest_version}")
-              except Exception as e:
-                  print(f"AUR wps-office-cn failed: {e}")
-
-          # Source 3: AUR wps-office-365
-          if not latest_version:
-              try:
-                  print("Trying AUR wps-office-365...")
-                  response = requests.get(
-                      'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=wps-office-365',
-                      timeout=15
-                  )
-                  match = re.search(r'pkgver=([\d.]+)', response.text)
-                  if match:
-                      latest_version = match.group(1)
-                      latest_build = latest_version.split('.')[-1]
-                      print(f"Found version from AUR wps-office-365: {latest_version}")
-              except Exception as e:
-                  print(f"AUR wps-office-365 failed: {e}")
-
-          # Source 4: www.wps.com/office/linux/
-          if not latest_version:
-              try:
-                  print("Trying www.wps.com...")
-                  response = requests.get("https://www.wps.com/office/linux/", timeout=15)
-                  versions = re.findall(r'12\.1\.\d+\.\d+', response.text)
-                  if versions:
-                      latest_version = versions[0]
-                      latest_build = latest_version.split('.')[-1]
-                      print(f"Found version from www.wps.com: {latest_version}")
-              except Exception as e:
-                  print(f"www.wps.com failed: {e}")
-
-          # If all sources failed
-          if not latest_version:
-              print("All version sources failed!")
-              if os.environ.get('FORCE_VERSION'):
-                  latest_version = os.environ['FORCE_VERSION']
+          if aur_pkgbuild_text:
+              static_match = re.search(r'(?m)^pkgver=([^\s#]+)', aur_pkgbuild_text)
+              if static_match:
+                  latest_version = static_match.group(1).strip().strip("'\"")
                   latest_build = latest_version.split('.')[-1]
-                  print(f"Using FORCE_VERSION: {latest_version}")
-              else:
-                  latest_version = current_version
-                  latest_build = current_version.split('.')[-1]
-                  print(f"No version change detected, keeping current: {latest_version}")
+
+              with tempfile.NamedTemporaryFile('w', delete=False, prefix='aur-pkgbuild-', suffix='.sh') as tmp_pkgbuild:
+                  tmp_pkgbuild.write(aur_pkgbuild_text)
+                  tmp_pkgbuild_path = tmp_pkgbuild.name
+
+              bash_script = r'''
+          set -euo pipefail
+          pkgbuild_file="$1"
+          source "$pkgbuild_file"
+
+          emit_var() {
+            local name="$1"
+            if ! declare -p "$name" >/dev/null 2>&1; then
+              return
+            fi
+            local decl
+            decl="$(declare -p "$name" 2>/dev/null || true)"
+            if [[ "$decl" == declare\ -a* ]]; then
+              eval "local -a values=(\"\${${name}[@]}\")"
+              for v in "${values[@]}"; do
+                printf '__SRC__\t%s\t%s\n' "$name" "$v"
+              done
+            else
+              eval "local value=\"\${${name}}\""
+              if [[ -n "${value:-}" ]]; then
+                printf '__SRC__\t%s\t%s\n' "$name" "$value"
+              fi
+            fi
+          }
+
+          printf '__PKGVER__\t%s\n' "${pkgver:-}"
+          emit_var source_x86_64
+          emit_var source_amd64
+          emit_var source
+          while IFS= read -r varname; do
+            case "$varname" in
+              source_x86_64|source_amd64|source) continue ;;
+            esac
+            emit_var "$varname"
+          done < <(compgen -A variable | grep '^source_' | sort)
+          '''
+
+              try:
+                  eval_result = subprocess.run(
+                      ['bash', '--noprofile', '--norc', '-c', bash_script, 'bash', tmp_pkgbuild_path],
+                      capture_output=True,
+                      text=True,
+                      check=True
+                  )
+              finally:
+                  os.unlink(tmp_pkgbuild_path)
+
+              resolved_sources = []
+              for line in eval_result.stdout.splitlines():
+                  if line.startswith('__PKGVER__\t'):
+                      eval_pkgver = line.split('\t', 1)[1].strip().strip("'\"")
+                      if eval_pkgver and not latest_version:
+                          latest_version = eval_pkgver
+                          latest_build = latest_version.split('.')[-1]
+                  elif line.startswith('__SRC__\t'):
+                      _, src_var, src_entry = line.split('\t', 2)
+                      resolved_sources.append((src_var, src_entry.strip()))
+
+              if latest_version:
+                  print(f"Authoritative pkgver (AUR): {latest_version}")
+
+              for src_var, src_entry in resolved_sources:
+                  if not src_entry:
+                      continue
+                  candidate = src_entry.split('::', 1)[1] if '::' in src_entry else src_entry
+                  if re.search(r'\.deb(?:$|[?#])', candidate):
+                      deb_url = candidate
+                      resolution_method = f"bash-eval:{src_var}"
+                      break
+
+          if not latest_version:
+              aur_error = aur_error or "Authoritative AUR pkgver could not be resolved from PKGBUILD."
+
+          if not deb_url:
+              aur_error = aur_error or "Authoritative x86_64/amd64 DEB URL could not be resolved from AUR PKGBUILD source entries."
+
+          if aur_error and not manual_override_allowed:
+              raise RuntimeError(aur_error)
+          if aur_error and manual_override_allowed:
+              print(f"AUR resolution failed, applying explicit manual override version: {force_version}")
+              print(f"AUR failure detail: {aur_error}")
+              latest_version = force_version
+              latest_build = latest_version.split('.')[-1]
+              deb_url = ""
+              resolution_method = "manual-version-override-no-url"
 
           print(f"Final determined version: {latest_version} (build: {latest_build})")
+          if deb_url:
+              print(f"DEB URL resolution method: {resolution_method}")
+              print(f"Resolved DEB URL (redacted): {redact_url(deb_url)}")
+          else:
+              print("Resolved DEB URL: <none>")
 
           # Check if version changed
-          force_build = os.environ.get('FORCE_BUILD', 'false').lower() == 'true'
           changed = latest_version != current_version or force_build
           
           if changed:
@@ -161,11 +219,15 @@ jobs:
           else:
               print("No version change detected")
 
-          # Construct deb URL
-          deb_url = f"https://pubwps-wps365-obs.wpscdn.cn/download/Linux/{latest_build}/wps-office_{latest_version}.AK.preread.sw.365_765469_amd64.deb"
-          
           # Try to get SHA256 (optional, we'll compute during build)
           sha256 = "SKIP"
+
+          if changed and deb_url:
+              print("Download decision: build/download enabled using authoritative AUR-resolved DEB URL")
+          elif changed and not deb_url:
+              print("Download decision: build requested, but no authoritative DEB URL resolved (manual override path)")
+          else:
+              print("Download decision: no version change detected")
           
           # Set outputs
           outputs = {
@@ -341,25 +403,17 @@ jobs:
       - name: Download and verify source
         id: download_source
         run: |
-          # CN base: source URL is time-signed via _get_source_url, so we generate it here
           VERSION="${{ needs.check-version.outputs.version }}"
-          # Generate CN URL via same logic as PKGBUILD _get_source_url
-          furl="https://wps-linux-personal.wpscdn.cn/wps/download/ep/Linux2023/${VERSION##*.}/wps-office_${VERSION}.AK.preread.sw.Personal_765474_amd64.deb"
-          uri="${furl#https://wps-linux-personal.wpscdn.cn}"
-          secrityKey='7f8faaaa468174dc1c9cd62e5f218a5b'
-          timestamp10=$(date '+%s')
-          md5hash=$(echo -n "${secrityKey}${uri}${timestamp10}" | md5sum)
-          DEB_URL="${furl}?t=${timestamp10}&k=${md5hash%% *}"
-          echo "Generated CN DEB_URL: $DEB_URL"
-          DEB_FILE="wps-office_${VERSION}_amd64.deb"
-          
-          echo "Downloading: $DEB_URL"
-          wget -q --show-progress "$DEB_URL" -O "$DEB_FILE" || {
-            echo "CN download failed, trying fallback 365 URL: ${{ needs.check-version.outputs.deb_url }}"
-            DEB_URL="${{ needs.check-version.outputs.deb_url }}"
-            DEB_FILE=$(basename "$DEB_URL" | cut -d'?' -f1)
-            wget -q --show-progress "$DEB_URL" -O "$DEB_FILE"
-          }
+          DEB_URL="${{ needs.check-version.outputs.deb_url }}"
+          if [[ -z "${DEB_URL}" ]]; then
+            echo "::error::No authoritative DEB URL resolved from AUR PKGBUILD. Refusing fallback URL generation."
+            exit 1
+          fi
+          DEB_URL_REDACTED="$(echo "$DEB_URL" | sed -E 's/\?.*/?<redacted>/')"
+          DEB_FILE=$(basename "$DEB_URL" | cut -d'?' -f1)
+          echo "Download decision: using authoritative DEB URL from check-version output"
+          echo "Resolved DEB URL (redacted): ${DEB_URL_REDACTED}"
+          wget -q --show-progress "$DEB_URL" -O "$DEB_FILE"
           
           # Compute SHA256
           SHA256=$(sha256sum "$DEB_FILE" | cut -d' ' -f1)
@@ -553,7 +607,7 @@ jobs:
           fetch-depth: 1
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.1.3
         with:
           name: wps-office-kr-packages
           path: dist/
