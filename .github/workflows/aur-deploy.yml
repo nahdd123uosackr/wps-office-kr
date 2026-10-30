@@ -42,7 +42,7 @@ jobs:
       AUR_KEY: /root/.ssh/aur_ci
     steps:
       - name: Install dependencies
-        run: pacman -Syu --noconfirm --needed git curl jq openssh
+        run: pacman -Syu --noconfirm --needed git curl jq openssh python
 
       - uses: actions/checkout@v4
         with:
