@@ -1,0 +1,144 @@
+name: AUR Deploy
+
+# WPS 버전(pkgver)이 실제로 바뀐 경우에만 AUR로 배포한다.
+# - 빌드 워크플로가 성공하면 실행되고, AUR의 현재 pkgver와 비교해 다를 때만 push
+# - 패치/번역만 바뀐 커밋(pkgver 동일)은 배포하지 않는다
+# - 수동 강제 배포: Actions → AUR Deploy → Run workflow (force=true)
+
+on:
+  workflow_run:
+    workflows: ["WPS Office KR Build & Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '버전이 같아도 강제로 AUR에 배포'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: aur-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux/archlinux:base-devel
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    env:
+      PKGBASE: wps-office-kr
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      AUR_KEY: /root/.ssh/aur_ci
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed git curl jq openssh
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || 'main' }}
+
+      - name: Prepare tools
+        run: |
+          useradd -m builder
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global user.name  "nahdd123"
+          git config --global user.email "nahdd123@gmail.com"
+
+      - name: Compare versions (gate)
+        id: gate
+        run: |
+          set -euo pipefail
+          local_ver=$(sed -n 's/^pkgver=//p' PKGBUILD)
+          local_rel=$(sed -n 's/^pkgrel=//p' PKGBUILD)
+          aur_json=$(curl -fsSL --retry 3 "https://aur.archlinux.org/rpc/v5/info?arg[]=${PKGBASE}")
+          aur_ver=$(printf '%s' "$aur_json" | jq -r '.results[0].Version // empty')
+          aur_pkgver=${aur_ver%-*}
+          echo "local=${local_ver}-${local_rel} | aur=${aur_ver:-<none>}"
+          if [[ -z ${aur_ver} ]]; then
+            echo "AUR에 패키지가 없습니다 → 최초 배포"
+            echo "deploy=1" >> "$GITHUB_OUTPUT"
+          elif [[ ${aur_pkgver} != "${local_ver}" ]]; then
+            echo "버전 변경 감지: ${aur_pkgver} -> ${local_ver} → 배포"
+            echo "deploy=1" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ inputs.force }}" == "true" ]]; then
+            echo "강제 배포 요청 → 배포"
+            echo "deploy=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "버전 동일 → 배포 건너뜀"
+            echo "deploy=0" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${local_ver}-${local_rel}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate .SRCINFO
+        if: steps.gate.outputs.deploy == '1'
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/srcgen && mkdir -p /tmp/srcgen
+          tar -cf - --exclude=.git --exclude=.github . | tar -xf - -C /tmp/srcgen
+          chown -R builder:builder /tmp/srcgen
+          su -s /bin/bash builder -c 'cd /tmp/srcgen && makepkg --printsrcinfo' > .SRCINFO
+          head -12 .SRCINFO
+
+      - name: Push to AUR
+        if: steps.gate.outputs.deploy == '1'
+        run: |
+          set -euo pipefail
+          install -d -m700 /root/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$AUR_KEY"
+          chmod 600 "$AUR_KEY"
+          ssh-keyscan -t ed25519 aur.archlinux.org >> /root/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $AUR_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
+          aur_dir=/tmp/aur-repo
+          rm -rf "$aur_dir"
+          if ! git clone --quiet "ssh://aur@aur.archlinux.org/${PKGBASE}.git" "$aur_dir" 2>/dev/null; then
+            echo "신규 패키지: 빈 저장소로 초기화"
+            mkdir -p "$aur_dir"
+            git -C "$aur_dir" init -q -b master
+            git -C "$aur_dir" remote add origin "ssh://aur@aur.archlinux.org/${PKGBASE}.git"
+          fi
+
+          # PKGBUILD 가 참조하는 로컬 소스만 골라서 복사
+          mapfile -t files < <(
+            {
+              echo PKGBUILD
+              echo .SRCINFO
+              awk '/^source\+=\(/,/^\)/' PKGBUILD \
+                | grep -oE "'[^']+'" | tr -d "'" | grep -v '::' || true
+            } | sort -u
+          )
+          for f in "${files[@]}"; do
+            [[ -e $f ]] && cp -a --parents "$f" "$aur_dir/" || echo "skip: $f"
+          done
+          for d in scripts wps_한글_패치 patches; do
+            [[ -d $d ]] && cp -a "$d" "$aur_dir/" || true
+          done
+
+          git -C "$aur_dir" add -A
+          if git -C "$aur_dir" diff --cached --quiet; then
+            echo "AUR 내용 변경 없음"
+          else
+            git -C "$aur_dir" commit -q -m "upgpkg: ${PKGBASE} ${{ steps.gate.outputs.version }}"
+            git -C "$aur_dir" push -q origin master
+            echo "AUR push 완료: ${{ steps.gate.outputs.version }}"
+          fi
+          rm -f "$AUR_KEY"
+
+      - name: Report failure
+        if: failure()
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${{ github.repository }}/issues" \
+            -d "{\"title\":\"AUR 배포 실패: $(date -u +%F)\",\"body\":\"로그: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            > /dev/null || echo "이슈 생성 실패 (무시)"
