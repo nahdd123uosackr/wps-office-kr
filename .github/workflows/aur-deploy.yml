@@ -1,9 +1,9 @@
 name: AUR Deploy
 
-# WPS 버전(pkgver)이 실제로 바뀐 경우에만 AUR로 배포한다.
-# - 빌드 워크플로가 성공하면 실행되고, AUR의 현재 pkgver와 비교해 다를 때만 push
-# - 패치/번역만 바뀐 커밋(pkgver 동일)은 배포하지 않는다
-# - 수동 강제 배포: Actions → AUR Deploy → Run workflow (force=true)
+# 이미 빌드된 패키지(GitHub Releases의 *.pkg.tar.zst)를 AUR에 배포한다.
+# 배포 조건: 릴리스 태그의 버전이 AUR 현재 버전과 다를 때만 (버전 업데이트 시에만)
+# - 패치/번역만 바뀐 커밋은 배포하지 않는다
+# - 강제 배포: Actions → AUR Deploy → Run workflow (force=true)
 
 on:
   workflow_run:
@@ -17,7 +17,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 concurrency:
@@ -35,7 +35,9 @@ jobs:
       run:
         shell: bash
     env:
-      PKGBASE: wps-office-kr
+      PKGBASE: wps-office-kr-bin
+      AUR_DIR: aur/wps-office-kr-bin
+      GH_REPO: nahdd123uosackr/wps-office-kr
       AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
       AUR_KEY: /root/.ssh/aur_ci
     steps:
@@ -45,6 +47,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_branch || 'main' }}
+          fetch-depth: 0
 
       - name: Prepare tools
         run: |
@@ -53,40 +56,71 @@ jobs:
           git config --global user.name  "nahdd123"
           git config --global user.email "nahdd123@gmail.com"
 
-      - name: Compare versions (gate)
+      - name: Resolve release version and gate
         id: gate
         run: |
           set -euo pipefail
-          local_ver=$(sed -n 's/^pkgver=//p' PKGBUILD)
-          local_rel=$(sed -n 's/^pkgrel=//p' PKGBUILD)
-          aur_json=$(curl -fsSL --retry 3 "https://aur.archlinux.org/rpc/v5/info?arg[]=${PKGBASE}")
-          aur_ver=$(printf '%s' "$aur_json" | jq -r '.results[0].Version // empty')
+          tag=$(curl -fsSL --retry 3 "https://api.github.com/repos/${GH_REPO}/releases/latest" | jq -r '.tag_name')
+          rel_ver=${tag#v}
+          aur_ver=$(curl -fsSL --retry 3 "https://aur.archlinux.org/rpc/v5/info?arg[]=${PKGBASE}" | jq -r '.results[0].Version // empty')
           aur_pkgver=${aur_ver%-*}
-          echo "local=${local_ver}-${local_rel} | aur=${aur_ver:-<none>}"
+          echo "release=${rel_ver} | aur=${aur_ver:-<none>}"
+
           if [[ -z ${aur_ver} ]]; then
-            echo "AUR에 패키지가 없습니다 → 최초 배포"
+            echo "AUR에 패키지 없음 → 최초 배포"
             echo "deploy=1" >> "$GITHUB_OUTPUT"
-          elif [[ ${aur_pkgver} != "${local_ver}" ]]; then
-            echo "버전 변경 감지: ${aur_pkgver} -> ${local_ver} → 배포"
+          elif [[ ${aur_pkgver} != "${rel_ver}" ]]; then
+            echo "버전 변경: ${aur_pkgver} -> ${rel_ver} → 배포"
             echo "deploy=1" >> "$GITHUB_OUTPUT"
           elif [[ "${{ inputs.force }}" == "true" ]]; then
-            echo "강제 배포 요청 → 배포"
+            echo "강제 배포 요청"
             echo "deploy=1" >> "$GITHUB_OUTPUT"
           else
             echo "버전 동일 → 배포 건너뜀"
             echo "deploy=0" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=${local_ver}-${local_rel}" >> "$GITHUB_OUTPUT"
+          echo "version=${rel_ver}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate .SRCINFO
+      - name: Update PKGBUILD (pkgver + sha256) and .SRCINFO
         if: steps.gate.outputs.deploy == '1'
         run: |
           set -euo pipefail
+          ver="${{ steps.gate.outputs.version }}"
+          tag="${{ steps.gate.outputs.tag }}"
+          base="https://github.com/${GH_REPO}/releases/download/${tag}"
+          declare -a names=(
+            "wps-office-kr-${ver}-1-x86_64.pkg.tar.zst"
+            "wps-office-kr-mime-${ver}-1-any.pkg.tar.zst"
+            "wps-office-kr-fonts-${ver}-1-any.pkg.tar.zst"
+          )
+          declare -a sums=()
+          mkdir -p /tmp/dl
+          for n in "${names[@]}"; do
+            echo "download: ${n}"
+            curl -fL --retry 3 --progress-bar -o "/tmp/dl/${n}" "${base}/${n}"
+            sums+=("$(sha256sum "/tmp/dl/${n}" | cut -d' ' -f1)")
+          done
+
+          python3 - "$ver" "${sums[0]}" "${sums[1]}" "${sums[2]}" <<'PY'
+          import re, sys
+          ver, s1, s2, s3 = sys.argv[1:5]
+          path = "aur/wps-office-kr-bin/PKGBUILD"
+          t = open(path, encoding='utf-8').read()
+          t = re.sub(r'^pkgver=.*$', f'pkgver={ver}', t, flags=re.M)
+          t = re.sub(r'^pkgrel=.*$', 'pkgrel=1', t, flags=re.M)
+          t = re.sub(r"^sha256sums=\(.*?\)\n",
+                     f"sha256sums=('{s1}'\n            '{s2}'\n            '{s3}')\n",
+                     t, flags=re.M | re.S, count=1)
+          open(path, 'w', encoding='utf-8').write(t)
+          PY
+
+          # install 존재를 위해 디렉터리를 그대로 복사해 .SRCINFO 생성
           rm -rf /tmp/srcgen && mkdir -p /tmp/srcgen
-          tar -cf - --exclude=.git --exclude=.github . | tar -xf - -C /tmp/srcgen
+          cp -a aur/wps-office-kr-bin/. /tmp/srcgen/
           chown -R builder:builder /tmp/srcgen
-          su -s /bin/bash builder -c 'cd /tmp/srcgen && makepkg --printsrcinfo' > .SRCINFO
-          head -12 .SRCINFO
+          su -s /bin/bash builder -c 'cd /tmp/srcgen && makepkg --printsrcinfo' > aur/wps-office-kr-bin/.SRCINFO
+          grep -E '^pkgver|^sha256sums' aur/wps-office-kr-bin/.SRCINFO | head -2
 
       - name: Push to AUR
         if: steps.gate.outputs.deploy == '1'
@@ -102,40 +136,39 @@ jobs:
           ssh-keyscan -t ed25519 aur.archlinux.org >> /root/.ssh/known_hosts 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i $AUR_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 
-          aur_dir=/tmp/aur-repo
-          rm -rf "$aur_dir"
-          if ! git clone --quiet "ssh://aur@aur.archlinux.org/${PKGBASE}.git" "$aur_dir" 2>/dev/null; then
-            echo "신규 패키지: 빈 저장소로 초기화"
-            mkdir -p "$aur_dir"
-            git -C "$aur_dir" init -q -b master
-            git -C "$aur_dir" remote add origin "ssh://aur@aur.archlinux.org/${PKGBASE}.git"
+          aur_repo=/tmp/aur-repo
+          rm -rf "$aur_repo"
+          if ! git clone --quiet "ssh://aur@aur.archlinux.org/${PKGBASE}.git" "$aur_repo" 2>/dev/null; then
+            echo "신규 패키지: 빈 저장소 초기화"
+            mkdir -p "$aur_repo"
+            git -C "$aur_repo" init -q -b master
+            git -C "$aur_repo" remote add origin "ssh://aur@aur.archlinux.org/${PKGBASE}.git"
           fi
 
-          # PKGBUILD 가 참조하는 로컬 소스만 골라서 복사
-          mapfile -t files < <(
-            {
-              echo PKGBUILD
-              echo .SRCINFO
-              awk '/^source\+=\(/,/^\)/' PKGBUILD \
-                | grep -oE "'[^']+'" | tr -d "'" | grep -v '::' || true
-            } | sort -u
-          )
-          for f in "${files[@]}"; do
-            [[ -e $f ]] && cp -a --parents "$f" "$aur_dir/" || echo "skip: $f"
-          done
-          for d in scripts wps_한글_패치 patches; do
-            [[ -d $d ]] && cp -a "$d" "$aur_dir/" || true
-          done
+          # AUR은 하위 디렉터리를 허용하지 않으므로 평면 파일만 복사
+          cp "${AUR_DIR}/PKGBUILD" "${AUR_DIR}/.SRCINFO" "${AUR_DIR}/wps-office-kr-bin.install" "$aur_repo/"
 
-          git -C "$aur_dir" add -A
-          if git -C "$aur_dir" diff --cached --quiet; then
+          git -C "$aur_repo" add -A
+          if git -C "$aur_repo" diff --cached --quiet; then
             echo "AUR 내용 변경 없음"
           else
-            git -C "$aur_dir" commit -q -m "upgpkg: ${PKGBASE} ${{ steps.gate.outputs.version }}"
-            git -C "$aur_dir" push -q origin master
-            echo "AUR push 완료: ${{ steps.gate.outputs.version }}"
+            git -C "$aur_repo" commit -q -m "upgpkg: ${PKGBASE} ${{ steps.gate.outputs.version }}-1"
+            git -C "$aur_repo" push -q origin master
+            echo "AUR push 완료: ${{ steps.gate.outputs.version }}-1"
           fi
           rm -f "$AUR_KEY"
+
+      - name: Commit updated PKGBUILD to repo
+        if: steps.gate.outputs.deploy == '1'
+        run: |
+          set -euo pipefail
+          git add aur/wps-office-kr-bin/PKGBUILD aur/wps-office-kr-bin/.SRCINFO
+          if git diff --cached --quiet; then
+            echo "레포 변경 없음"
+          else
+            git commit -q -m "aur: wps-office-kr-bin ${{ steps.gate.outputs.version }}-1"
+            git push
+          fi
 
       - name: Report failure
         if: failure()
