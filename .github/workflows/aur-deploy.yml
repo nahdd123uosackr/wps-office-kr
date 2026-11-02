@@ -102,18 +102,8 @@ jobs:
             sums+=("$(sha256sum "/tmp/dl/${n}" | cut -d' ' -f1)")
           done
 
-          python3 - "$ver" "${sums[0]}" "${sums[1]}" "${sums[2]}" <<'PY'
-          import re, sys
-          ver, s1, s2, s3 = sys.argv[1:5]
-          path = "aur/wps-office-kr-bin/PKGBUILD"
-          t = open(path, encoding='utf-8').read()
-          t = re.sub(r'^pkgver=.*$', f'pkgver={ver}', t, flags=re.M)
-          t = re.sub(r'^pkgrel=.*$', 'pkgrel=1', t, flags=re.M)
-          t = re.sub(r"^sha256sums=\(.*?\)\n",
-                     f"sha256sums=('{s1}'\n            '{s2}'\n            '{s3}')\n",
-                     t, flags=re.M | re.S, count=1)
-          open(path, 'w', encoding='utf-8').write(t)
-          PY
+          python3 scripts/update-aur-pkgbuild.py \
+            aur/wps-office-kr-bin/PKGBUILD "$ver" "${sums[0]}" "${sums[1]}" "${sums[2]}"
 
           # install 존재를 위해 디렉터리를 그대로 복사해 .SRCINFO 생성
           rm -rf /tmp/srcgen && mkdir -p /tmp/srcgen

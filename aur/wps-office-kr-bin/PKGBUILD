@@ -29,7 +29,8 @@ _pkgs=(
 source=("${_pkgs[0]}::${_gh}/${_pkgs[0]}"
         "${_pkgs[1]}::${_gh}/${_pkgs[1]}"
         "${_pkgs[2]}::${_gh}/${_pkgs[2]}")
-sha256sums=('8dd4c7376a815c0bf2a1f927b9d369bb5dcde49e166bc42179753d58be3c2de7'
+sha256sums=(
+            '8dd4c7376a815c0bf2a1f927b9d369bb5dcde49e166bc42179753d58be3c2de7'
             '4cbf9a1baeb61bf3b37671015652dcf0967f104d5fb453bfca583a52e27d8065'
             '4fc1bb92d8f2f34e82c396ad0a2b03a4d100ec1a86faaad6b22249faa2161895')
 
