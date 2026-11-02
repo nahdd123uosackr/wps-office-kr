@@ -110,7 +110,7 @@ jobs:
           cp -a aur/wps-office-kr-bin/. /tmp/srcgen/
           chown -R builder:builder /tmp/srcgen
           su -s /bin/bash builder -c 'cd /tmp/srcgen && makepkg --printsrcinfo' > aur/wps-office-kr-bin/.SRCINFO
-          grep -E '^pkgver|^sha256sums' aur/wps-office-kr-bin/.SRCINFO | head -2
+          grep -E 'pkgver = |sha256sums = ' aur/wps-office-kr-bin/.SRCINFO | head -3 || true
 
       - name: Push to AUR
         if: steps.gate.outputs.deploy == '1'
