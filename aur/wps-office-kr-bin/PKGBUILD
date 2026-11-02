@@ -30,9 +30,9 @@ source=("${_pkgs[0]}::${_gh}/${_pkgs[0]}"
         "${_pkgs[1]}::${_gh}/${_pkgs[1]}"
         "${_pkgs[2]}::${_gh}/${_pkgs[2]}")
 sha256sums=(
-            '8dd4c7376a815c0bf2a1f927b9d369bb5dcde49e166bc42179753d58be3c2de7'
-            '4cbf9a1baeb61bf3b37671015652dcf0967f104d5fb453bfca583a52e27d8065'
-            '4fc1bb92d8f2f34e82c396ad0a2b03a4d100ec1a86faaad6b22249faa2161895')
+            '8d2ca44ef74a8ad4aeadc30dd708fc8cae0f0ade9499d64cecd178e7b5e7476c'
+            '32a81fc1117182ea359106e24749a6ef1abe523582d1e97c9d75bd73a05f2edd'
+            'fccc753aee5d4b4139fb00fde69d7f0e6613506af07c9db1f680799dfe7cd7da')
 
 package() {
   # 미리 빌드된 pacman 패키지들을 그대로 풀어 재패키징한다.
