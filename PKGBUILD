@@ -4,7 +4,7 @@
 
 pkgbase=wps-office-kr
 pkgname=('wps-office-kr' 'wps-office-kr-mime' 'wps-office-kr-fonts')
-pkgver=12.1.2.28080
+pkgver=12.1.2.29183
 pkgrel=1
 pkgdesc="WPS Office with Korean locale, default yyyy-MM-dd date format, fixed MIME types, and improved font rendering (CN base, /usr/lib/office6)"
 arch=('x86_64' 'aarch64')
@@ -28,7 +28,7 @@ _get_source_url() {
 }
 source_x86_64=("wps-office_${pkgver}_amd64.deb::$(_get_source_url amd64)")
 source_aarch64=("wps-office_${pkgver}_arm64.deb::$(_get_source_url arm64)")
-sha256sums_x86_64=('2fa999f60a71e21093ab49ef6d7f61d7668c844bfebf30907d2c290e460f9be0')
+sha256sums_x86_64=('77ffbdc1be76c834e1853c27ff9063e49d5d3b1f30b206d785761b5bf560c83b')
 sha256sums_aarch64=('SKIP')
 
 install=wps-office-kr.install

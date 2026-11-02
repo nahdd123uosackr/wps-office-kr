@@ -588,6 +588,7 @@ jobs:
         with:
           name: wps-office-kr-packages
           path: |
+            PKGBUILD
             *.pkg.tar.zst
             *.pkg.tar.zst.sig
             wps-office-kr_*.deb
@@ -634,9 +635,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          # The PKGBUILD was already updated during build
-          # Commit and push if there are changes
+
+          # 빌드 잡이 갱신한 PKGBUILD(pkgver/sha256)를 아티팩트에서 가져온다.
+          # (release 잡의 워크스페이스에는 빌드 잡 변경분이 없음)
+          if [[ -f dist/PKGBUILD ]]; then
+            cp -f dist/PKGBUILD PKGBUILD
+          fi
+
           if ! git diff --quiet PKGBUILD; then
             git add PKGBUILD
             git commit -m "chore: update to version ${{ needs.check-version.outputs.version }} [skip ci]"
