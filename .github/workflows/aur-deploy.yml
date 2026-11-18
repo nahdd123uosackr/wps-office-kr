@@ -63,7 +63,10 @@ jobs:
         id: gate
         run: |
           set -euo pipefail
-          rel_json=$(curl -fsSL --retry 3 "https://api.github.com/repos/${GH_REPO}/releases/latest")
+          rel_json=$(curl -fsSL --retry 3 \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GH_REPO}/releases/latest")
           tag=$(jq -r '.tag_name' <<<"$rel_json")
           rel_ver=${tag#v}
 
